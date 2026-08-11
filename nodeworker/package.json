@@ -1,0 +1,19 @@
+{
+  "name": "verity-node-worker",
+  "version": "0.1.0",
+  "description": "Verity Node worker: JSON-RPC 2.0 over stdio (browser, axe-core, deterministic capture)",
+  "main": "dist/rpc/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/rpc/server.js",
+    "clean": "rm -rf dist"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MPL-2.0",
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2"
+  },
+  "type": "module"
+}
