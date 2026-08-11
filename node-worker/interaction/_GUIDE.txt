@@ -1,7 +1,0 @@
-DIRECTORY: node-worker/interaction/
-===========================================================
-Owner: Developer A[cite: 1]
-
-Future Files (Phase 1 W4):
-- keyboard.ts -> Tab order tracking, focus state capture, and trap detection[cite: 1]
-- contracts.ts -> APG contract runner[cite: 1]

@@ -1,7 +1,0 @@
-DIRECTORY: node-worker/rpc/
-===========================================================
-Owner: Developer A[cite: 1]
-Week 1 Task: A1.1[cite: 1]
-
-Files:
-- server.ts -> Line-delimited JSON-RPC 2.0 server over stdin/stdout[cite: 1]. Listens for commands from Developer B's rpc_client.py[cite: 1].
