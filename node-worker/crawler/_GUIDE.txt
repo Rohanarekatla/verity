@@ -1,0 +1,7 @@
+DIRECTORY: node-worker/crawler/
+===========================================================
+Owner: Developer A[cite: 1]
+Week 1 Tasks: A1.2, A1.3[cite: 1]
+
+Files:
+- render.ts -> Playwright Chromium browser navigation and DOM mutation settle logic[cite: 1]. Captures outerHTML, CDP AX tree, computed styles, and full screenshot into a RenderArtifact[cite: 1].

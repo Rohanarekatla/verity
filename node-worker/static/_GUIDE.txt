@@ -1,0 +1,7 @@
+DIRECTORY: node-worker/static/
+===========================================================
+Owner: Developer A[cite: 1]
+Week 1 Task: A1.4[cite: 1]
+
+Files:
+- axe.ts -> Injects unmodified axe-core dependency and runs axe.run()[cite: 1]. Returns all four result arrays (violations, passes, incomplete, inapplicable)[cite: 1].

@@ -1,0 +1,6 @@
+DIRECTORY: node-worker/state_explorer/
+===========================================================
+Owner: Developer A[cite: 1]
+
+Future Files (Phase 3 W13):
+- explorer.ts -> Bounded exploration of UI states (modals, menus, dropdowns)[cite: 1, 2]
