@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Contrast fixture — fail</title>
+  <style>
+    body { background: #ffffff; font-family: sans-serif; padding: 2rem; }
+    p { color: #cccccc; font-size: 16px; } /* ~1.6:1 against white — fails WCAG AA 4.5:1 */
+  </style>
+</head>
+<body>
+  <h1 style="color:#000">Contrast fixture</h1>
+  <p id="low-contrast-text">This paragraph fails the WCAG AA 4.5:1 contrast threshold on purpose.</p>
+</body>
+</html>

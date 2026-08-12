@@ -16,13 +16,27 @@ for the full rationale.
 
 ## Status
 
-Early. The RPC skeleton between the two languages exists and is
-tested end to end; the data models are defined; the ML agents,
-calibration, and report generators described below are not yet built.
+Early — Week 1 in progress. Working end to end today:
+
+- `render` navigates a real page with Playwright and captures a
+  `RenderArtifact` (DOM, accessibility tree, styles, screenshot,
+  network log).
+- `runAxe` injects `axe-core` into that page and returns its bucketed
+  results.
+- Proven against a fixture with a deliberate contrast violation: one
+  correct, authoritative `color-contrast` finding, zero false
+  positives on a clean fixture — see
+  [`node-worker/test/render-axe.test.mjs`](node-worker/test/render-axe.test.mjs).
+- The Python orchestrator's data models and RPC client are built and
+  tested independently.
+
+Not yet built: the ML agents, calibration, and report generators.
+`verity/orchestrator/main.py`'s scan pipeline also doesn't call
+`render`/`runAxe` correctly yet — see the note in
+[`verity/orchestrator/README.md`](verity/orchestrator/README.md).
 This README will grow a demo, an install path, and a limitations
-table once there's something real to show — see
-[docs/adr/](docs/adr/) and each directory's own `README.md` for
-current state.
+table once there's more to show — see [docs/adr/](docs/adr/) and each
+directory's own `README.md` for current state.
 
 ## Layout
 
@@ -105,8 +119,8 @@ push and PR, so a break on either side is caught before merge.
 ```bash
 cd node-worker
 npm install
-npm run build
-node --test test/protocol.test.mjs   # 15/15
+npx playwright install chromium   # one-time: browser binary for render/runAxe
+npm test                           # build + protocol suite + render/axe gate test — 17/17
 ```
 
 ### Python orchestrator
