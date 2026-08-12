@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  node-worker:
+    name: node-worker (build + test)
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: node-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: node-worker/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: node --test test/protocol.test.mjs
+
+  python-orchestrator:
+    name: verity (pytest)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync
+      - run: uv run pytest verity/tests/ -v
+
+  contract:
+    name: cross-language contract check
+    runs-on: macos-latest
+    needs: [node-worker]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: node-worker/package-lock.json
+      - working-directory: node-worker
+        run: |
+          npm ci
+          npm run build
+      - run: python3 node-worker/contract/reference_client.py

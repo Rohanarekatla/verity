@@ -1,8 +1,0 @@
-DIRECTORY: data/
-===========================================================
-Owner: Both Developers[cite: 1]
-
-Files & Subfolders:
-- wcag/ -> Static WCAG 2.2 success criteria JSON data[cite: 2]
-- apg-contracts/ -> YAML interaction contracts for ARIA patterns[cite: 1, 2]
-- fixtures/ -> HTML test files (good vs bad pairs)[cite: 1]

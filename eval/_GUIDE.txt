@@ -1,8 +1,0 @@
-DIRECTORY: eval/
-===========================================================
-Owner: Both Developers[cite: 1]
-Domain: Evaluation harness, synthetic defect injection, and precision metrics[cite: 1, 2].
-
-Subfolders:
-- inject/ -> Fault injector scripts for generating test data[cite: 1]
-- baselines/ -> Frozen accuracy metrics (verity_version.json)[cite: 2]
