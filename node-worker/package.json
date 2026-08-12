@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/rpc/server.js",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test": "npm run build && node --test test/protocol.test.mjs"
   },
   "keywords": [],
   "author": "",

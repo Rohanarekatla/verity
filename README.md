@@ -46,6 +46,58 @@ current state.
 Every directory has its own `README.md` — read that before adding
 files to it.
 
+## How to work in this repo
+
+Two people, two languages, one repo. The split is by directory, not by
+feature — pick your language and you're in the right place.
+
+| You are... | You work in | You run |
+|---|---|---|
+| **Rohan** (browser, TypeScript, CI surface) | `node-worker/` | `cd node-worker && npm test` *(builds, then runs the 15 protocol tests)* |
+| **Nikhil** (orchestration, ML, Python) | `verity/`, `eval/`, `data/`, `rulepacks/` | `uv run pytest verity/tests/` |
+
+You don't need the other side's toolchain installed to work on your
+own — Node isn't required to touch `verity/`, and Python isn't
+required to touch `node-worker/`. You only need both when testing the
+full contract (see below).
+
+**"Where do I put this?"**
+
+- A new ML worker or verification step → `verity/agents/` (own file,
+  read its `README.md` first — there's a rule about models never being
+  the sole source of a verdict).
+- A new WCAG/APG reference fact → `data/` (no code, just structured
+  data).
+- A new fault-injection type or accuracy check → `eval/`.
+- A new output format (SARIF, JUnit, ...) → `verity/report/`.
+- A change to what the worker can do (new RPC method, new field on a
+  result) → **both** `node-worker/src/rpc/protocol.ts` and
+  `verity/models/schemas.py` in the same PR. This is the one case
+  that always touches both directories — see next section.
+
+**Changing the shared contract**
+
+`protocol.ts` and `schemas.py` are two views of the same interface.
+If you change one without the other, the two processes silently start
+disagreeing about what a message means. The rule:
+
+1. Edit both files in the same PR.
+2. Add/update a test on each side (`node-worker/test/`,
+   `verity/tests/`) that exercises the change.
+3. Run the contract check: `python3 node-worker/contract/reference_client.py`
+   against a freshly built worker — it's the fastest way to see the
+   two sides actually talking.
+4. If the change reverses a decision in `docs/adr/`, update that ADR
+   rather than leaving it to go stale.
+
+**Before you propose a different design** for the transport, framing,
+or error handling — check `docs/adr/` first. It usually already
+records why the current approach was chosen and what alternative lost.
+
+**CI** (`.github/workflows/ci.yml`) runs all three checks — Node
+build+test, Python pytest, and the cross-language contract — on every
+push and PR, so a break on either side is caught before merge.
+
 ## Getting started
 
 ### Node worker
