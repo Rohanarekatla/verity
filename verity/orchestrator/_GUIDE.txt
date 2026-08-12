@@ -1,9 +1,0 @@
-DIRECTORY: verity/orchestrator/
-===========================================================
-Owner: Developer B[cite: 1]
-Week 1 Tasks: B1.2, B1.3[cite: 1]
-
-Files:
-- __init__.py -> Package marker
-- rpc_client.py -> Spawns Developer A's Node sidecar as an asyncio subprocess[cite: 1]. Handles stdio JSON-RPC calls, timeouts, and shutdowns[cite: 1].
-- main.py -> Single-URL execution pipeline (render -> runAxe -> map findings to Pydantic)[cite: 1].

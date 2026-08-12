@@ -1,53 +1,81 @@
-# Verity (Project-V)
+# Verity
 
-Verity is an accessibility conformance engine: a Python orchestrator (ML,
-trust machinery) drives a long-lived Node.js worker (Playwright, axe-core)
-over JSON-RPC 2.0 on stdio. It's a polyglot system — Python owns the ML and
-orchestration ecosystem, Node owns the browser.
+Verity is a WCAG accessibility conformance engine. It screens a page
+with `axe-core`, adjudicates ambiguous results deterministically (e.g.
+contrast over images), and — where a model is used at all — treats the
+model as a *localiser* whose output still has to clear a deterministic
+check before it becomes a finding.
+
+It's a **polyglot system**: a Python orchestrator (ML, calibration,
+trust machinery, report generation) drives a long-lived Node.js worker
+(Playwright + `axe-core`) over JSON-RPC 2.0 on stdio. Neither language
+does the other's job — Python doesn't have a trustworthy `axe-core`
+equivalent, and Node doesn't have the ML ecosystem. See
+[`docs/adr/0001-polyglot-json-rpc-over-stdio.md`](docs/adr/0001-polyglot-json-rpc-over-stdio.md)
+for the full rationale.
+
+## Status
+
+Early. The RPC skeleton between the two languages exists and is
+tested end to end; the data models are defined; the ML agents,
+calibration, and report generators described below are not yet built.
+This README will grow a demo, an install path, and a limitations
+table once there's something real to show — see
+[docs/adr/](docs/adr/) and each directory's own `README.md` for
+current state.
 
 ## Layout
 
 ```
 .
-├── node-worker/            # TypeScript: JSON-RPC worker over stdio
-│   ├── src/
-│   │   ├── rpc/            # protocol, framing, dispatcher, server
-│   │   └── handlers/       # method implementations (ping, render, runAxe)
-│   ├── test/                # protocol boundary tests (15 cases)
-│   ├── contract/            # Python reference client — proves the wire format
-│   └── A1.1-explained.md    # full design rationale, error codes, interview notes
-└── orchestrator/            # Python side (in progress)
+├── node-worker/          # TypeScript: JSON-RPC worker over stdio (Playwright, axe-core)
+├── verity/                # Python: orchestration, models, ML agents, calibration, reports
+│   ├── models/            # Pydantic schemas — source of truth for types on both sides
+│   ├── orchestrator/       # Spawns/drives the Node worker; the scan pipeline
+│   ├── agents/             # ML workers: vision, audio, contrast-over-image, validator
+│   ├── calibration/        # Confidence calibration (isotonic, conformal)
+│   ├── report/             # SARIF / VPAT-ACR / JUnit generators
+│   └── tests/
+├── eval/                  # Fault-injection harness + frozen accuracy baselines
+├── data/                  # WCAG criteria, APG interaction contracts, test fixtures
+├── rulepacks/              # Custom rule packs + their required fixtures
+├── action/                 # GitHub Action wrapper (depends on verity/report/)
+└── docs/adr/                # Architecture Decision Records
 ```
+
+Every directory has its own `README.md` — read that before adding
+files to it.
 
 ## Getting started
 
+### Node worker
+
 ```bash
-git clone https://github.com/Rohanarekatla/Project-V.git
-cd Project-V/node-worker
+cd node-worker
 npm install
 npm run build
-
-node --test test/protocol.test.mjs     # should be 15/15
-python3 contract/reference_client.py   # proves Python <-> Node contract
+node --test test/protocol.test.mjs   # 15/15
 ```
 
-## The contract
+### Python orchestrator
 
-- **Node** (`node-worker/`) owns the browser: Playwright + axe-core.
-- **Python** (`orchestrator/`) owns orchestration, ML, and the trust layer.
-- They talk over **JSON-RPC 2.0**, one JSON object per line, on stdio.
-- The interface is `node-worker/src/rpc/protocol.ts` — if you change it, the
-  other side breaks. Coordinate before pushing.
+```bash
+uv sync
+uv run pytest verity/tests/
+```
 
-Full rationale for every design decision (subprocess vs HTTP, framing,
-error codes, timeouts) is in
-[`node-worker/A1.1-explained.md`](node-worker/A1.1-explained.md).
+### Prove the cross-language contract
 
-## Working here
+```bash
+cd node-worker && npm run build && cd ..
+python3 node-worker/contract/reference_client.py
+```
 
-- Each engineer works in their own top-level folder (`node-worker/` vs
-  `orchestrator/`) so changes rarely collide.
-- `node_modules/`, `dist/`, and Python build artifacts are gitignored —
-  never commit them.
-- Before pushing a change to `src/rpc/protocol.ts`, ping the other side —
-  it's the shared interface both languages depend on.
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) — setup, the shared RPC
+contract, and PR conventions.
+
+## License
+
+[MPL-2.0](LICENSE).

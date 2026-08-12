@@ -1,7 +1,0 @@
-DIRECTORY: rulepacks/
-===========================================================
-Owner: Both Developers[cite: 1]
-
-Files:
-- .verity-rule.yaml -> Custom rule definition packs[cite: 2]
-- fixtures/ -> Required passing and failing test HTML for rule validation[cite: 1, 2]

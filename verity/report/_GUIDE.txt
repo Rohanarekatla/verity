@@ -1,9 +1,0 @@
-DIRECTORY: verity/report/
-===========================================================
-Owner: Developer B[cite: 1]
-Domain: Report generation for compliance and CI[cite: 2].
-
-Future Files (Phase 2 & 4):
-- sarif.py -> Converts Findings into SARIF 2.1.0 for GitHub PR annotations[cite: 1]
-- acr.py -> Generates VPAT 2.5 ACR draft documents[cite: 2]
-- junit.py -> XML test results for CI pass/fail gates[cite: 1]

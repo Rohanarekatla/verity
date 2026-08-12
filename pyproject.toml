@@ -1,8 +1,9 @@
 [project]
 name = "verity"
 version = "0.1.0"
-description = "Add your description here"
+description = "Polyglot WCAG accessibility conformance engine: Python orchestrator + Node/Playwright/axe-core worker"
 readme = "README.md"
+license = { text = "MPL-2.0" }
 requires-python = ">=3.13"
 dependencies = [
     "pydantic>=2.13.4",
