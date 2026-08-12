@@ -42,7 +42,12 @@ directory's own `README.md` for current state.
 
 ```
 .
-├── node-worker/          # TypeScript: JSON-RPC worker over stdio (Playwright, axe-core)
+├── node-worker/          # TypeScript: browser + deterministic engines
+│   ├── rpc/               # JSON-RPC 2.0 over stdio: protocol, framing, dispatch, handlers
+│   ├── crawler/            # Chromium lifecycle, render → RenderArtifact, page handoff
+│   ├── static/             # axe-core, accname, geometry, contrast math (authoritative)
+│   ├── interaction/         # Keyboard vs APG contracts (Week 4)
+│   └── state_explorer/       # Bounded modal/menu/error states (Week 17)
 ├── verity/                # Python: orchestration, models, ML agents, calibration, reports
 │   ├── models/            # Pydantic schemas — source of truth for types on both sides
 │   ├── orchestrator/       # Spawns/drives the Node worker; the scan pipeline
@@ -90,7 +95,7 @@ full contract (see below).
 - A new fault-injection type or accuracy check → `eval/`.
 - A new output format (SARIF, JUnit, ...) → `verity/report/`.
 - A change to what the worker can do (new RPC method, new field on a
-  result) → **both** `node-worker/src/rpc/protocol.ts` and
+  result) → **both** `node-worker/rpc/protocol.ts` and
   `verity/models/schemas.py` in the same PR. This is the one case
   that always touches both directories — see next section.
 
@@ -125,7 +130,7 @@ push and PR, so a break on either side is caught before merge.
 cd node-worker
 npm install
 npx playwright install chromium   # one-time: browser binary for render/runAxe
-npm test                           # build + protocol suite + render/axe gate test — 17/17
+npm test                           # build + protocol suite + render/axe gate tests — 19/19
 ```
 
 ### Python orchestrator

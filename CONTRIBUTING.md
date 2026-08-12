@@ -38,7 +38,7 @@ python3 node-worker/contract/reference_client.py
 
 ## The shared contract
 
-[`node-worker/src/rpc/protocol.ts`](node-worker/src/rpc/protocol.ts) and
+[`node-worker/rpc/protocol.ts`](node-worker/rpc/protocol.ts) and
 [`verity/models/schemas.py`](verity/models/schemas.py) are the two
 halves of the interface between the languages. If you change either
 one:

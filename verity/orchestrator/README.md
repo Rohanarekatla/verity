@@ -8,7 +8,7 @@
 This is the Python half of the contract described in
 [ADR 0001](../../docs/adr/0001-polyglot-json-rpc-over-stdio.md). If
 you change how a call is made or times out, check
-[`node-worker/src/rpc/dispatcher.ts`](../../node-worker/src/rpc/dispatcher.ts)
+[`node-worker/rpc/dispatcher.ts`](../../node-worker/rpc/dispatcher.ts)
 for the matching behavior on the other side.
 
 ## Known drift from the Node side (needs a Python-side fix)
@@ -16,7 +16,7 @@ for the matching behavior on the other side.
 `main.py`'s `scan_url()` currently calls a method named `"analyze"`,
 which doesn't exist — the worker only registers `ping`, `render`, and
 `runAxe` (see
-[`node-worker/src/handlers/index.ts`](../../node-worker/src/handlers/index.ts)).
+[`node-worker/rpc/handlers.ts`](../../node-worker/rpc/handlers.ts)).
 It should call `"runAxe"` with `{"artifactId": ...}`, where
 `artifactId` comes from the `render` response.
 

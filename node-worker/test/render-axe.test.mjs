@@ -12,6 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -104,5 +105,45 @@ test(
     const { axe } = await renderAndAnalyze("contrast-pass.html");
     const contrastFindings = axe.violations.filter((v) => v.id === "color-contrast");
     assert.equal(contrastFindings.length, 0, "no false positive on a clean fixture");
+  },
+);
+
+test(
+  "render waits for DOM mutations to stop before capturing (A1.2 settle window)",
+  async () => {
+    // late-mutation.html rewrites a node every 100ms for ~1.5s, then writes
+    // "FINAL" and stops. A fixed post-networkidle sleep captures mid-mutation;
+    // only a real mutation-settle observer captures the finished state.
+    const { render } = await renderAndAnalyze("late-mutation.html");
+    const dom = await readFile(render.dom_path, "utf8");
+
+    assert.match(
+      dom,
+      /<div id="t">FINAL<\/div>/,
+      "captured the settled DOM, not a mid-mutation snapshot",
+    );
+  },
+);
+
+test(
+  "the cache key is content-addressed and stable across renders (A1.3)",
+  async () => {
+    const a = await renderAndAnalyze("contrast-pass.html");
+    const b = await renderAndAnalyze("contrast-pass.html");
+
+    assert.equal(
+      a.render.page_state.content_hash,
+      b.render.page_state.content_hash,
+      "an unchanged page must produce an identical cache key",
+    );
+    assert.ok(
+      a.render.dom_path.includes(a.render.page_state.content_hash),
+      "artifacts live under .verity/cache/<content_hash>/",
+    );
+    assert.notEqual(
+      a.render.artifactId,
+      b.render.artifactId,
+      "artifactId is a live-page handle, not the cache key — it must differ",
+    );
   },
 );

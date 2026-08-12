@@ -142,8 +142,8 @@ authoritative contrast finding **through the CLI**."*
 | Task | Owner | Status |
 |---|---|---|
 | A1.1 `rpc/server.ts` — JSON-RPC over stdio, `ping`/`render`/`runAxe` | A | ✅ done, 15 protocol tests |
-| A1.2 `render.ts` — Chromium, network-idle + mutation settle | A | ✅ done (settle window is a fixed 500ms wait, **not** a true no-mutations-for-500ms observer capped at 10s — see gap below) |
-| A1.3 `RenderArtifact` capture, cache key | A | ⚠️ partial — five files captured, but written to `os.tmpdir()`, **not** `.verity/cache/<sha256>/`; no element screenshots yet (that's A2.2) |
+| A1.2 `crawler/render.ts` — Chromium, network-idle + mutation settle | A | ✅ done — real `MutationObserver` settle (no mutations for 500ms, capped at 10s), regression-tested against a fixture that mutates for ~1.5s then stops |
+| A1.3 `RenderArtifact` capture, cache key | A | ✅ done — artifacts under `.verity/cache/<sha256>/`, key = hash(DOM + styles + screenshot), verified stable across re-renders. Element screenshots are A2.2 (next week) |
 | A1.4 `static/axe.ts` — axe-core unmodified, all four arrays | A | ✅ done, all four buckets returned |
 | B1.1 `schemas.py` | B | ✅ done |
 | B1.2 `rpc_client.py` | B | ✅ done |
@@ -157,14 +157,19 @@ authoritative contrast finding **through the CLI**."*
 cannot complete a scan) and B1.5 (Week 2 cannot measure precision
 without labelled data).
 
-### Directory layout drift
+### Directory layout — resolved
 
-The Bible specifies `node-worker/crawler/`, `node-worker/static/`,
-`node-worker/interaction/`, `node-worker/state_explorer/`, `rpc/`. The
-repo currently uses `node-worker/src/browser/` and
-`node-worker/src/rpc/`. Functionally equivalent, but worth either
-renaming to match the Bible or recording an ADR that we've deviated —
-before more files land in the wrong place.
+`node-worker/` now matches the Bible: `rpc/`, `crawler/`, `static/`,
+plus placeholder `interaction/` (W4) and `state_explorer/` (W17). The
+earlier `src/browser/` + `src/handlers/` layout is gone.
+
+One known deviation, already documented in
+[`A1.1-explained.md`](../node-worker/A1.1-explained.md): the built
+entry point is `dist/rpc/server.js`, while A1.1's acceptance criterion
+is written as `node dist/server.js`. The criterion assumes a flat
+layout; the Bible's own directory spec implies the nested one. A `bin`
+entry (`verity-worker`) is exposed in `package.json` so callers have a
+stable name either way. Nothing depends on the flat path.
 
 ---
 

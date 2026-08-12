@@ -13,16 +13,68 @@
 
 import { randomUUID, createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { Page } from "playwright";
 import { getBrowser } from "./instance.js";
 import { registerPage } from "./pages.js";
 import { log } from "../rpc/log.js";
 
+/**
+ * Artifacts are content-addressed: the directory name IS the cache key, so
+ * re-rendering an unchanged page lands in the same place and downstream
+ * stages can skip it. Relative to cwd so a repo-local run keeps its cache
+ * beside the project rather than in a shared temp dir that gets swept.
+ */
+const CACHE_ROOT = join(process.cwd(), ".verity", "cache");
+
 const VIEWPORT = { width: 1280, height: 800 } as const;
 
-/** Settle window after networkidle to catch late DOM mutations (SPAs, lazy content). */
-const SETTLE_MS = 500;
+/**
+ * DOM-mutation settle window, applied after networkidle.
+ *
+ * networkidle alone is not enough for SPAs: a client-side render pass can
+ * mutate the DOM well after the last network request settles, and capturing
+ * then gives you a loading spinner. We wait for a genuinely quiet period —
+ * no mutations for QUIET_MS — rather than a fixed sleep, because a fixed
+ * sleep is simultaneously too long for static pages and too short for slow
+ * ones. CAP_MS bounds the wait so a page that mutates forever (carousels,
+ * animated counters, polling widgets) still gets captured.
+ */
+const SETTLE_QUIET_MS = 500;
+const SETTLE_CAP_MS = 10_000;
+
+async function waitForDomSettle(page: Page, quietMs: number, capMs: number): Promise<void> {
+  await page.evaluate(
+    ({ quietMs, capMs }) =>
+      new Promise<void>((resolve) => {
+        let quietTimer: ReturnType<typeof setTimeout>;
+
+        const finish = () => {
+          clearTimeout(quietTimer);
+          clearTimeout(capTimer);
+          observer.disconnect();
+          resolve();
+        };
+
+        const observer = new MutationObserver(() => {
+          clearTimeout(quietTimer);
+          quietTimer = setTimeout(finish, quietMs);
+        });
+
+        const capTimer = setTimeout(finish, capMs);
+
+        observer.observe(document, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          characterData: true,
+        });
+
+        quietTimer = setTimeout(finish, quietMs);
+      }),
+    { quietMs, capMs },
+  );
+}
 
 export interface RenderResult {
   artifactId: string;
@@ -72,10 +124,7 @@ export async function render(url: string): Promise<RenderResult> {
     throw new Error(`navigation to ${url} failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  // networkidle alone is not enough for SPAs that mutate the DOM after their
-  // last network request settles (e.g. a client-side render pass). A short
-  // settle window catches that without the cost of a fixed long sleep.
-  await page.waitForTimeout(SETTLE_MS);
+  await waitForDomSettle(page, SETTLE_QUIET_MS, SETTLE_CAP_MS);
 
   const finalUrl = page.url();
 
@@ -101,8 +150,19 @@ export async function render(url: string): Promise<RenderResult> {
 
   const screenshot = await page.screenshot({ fullPage: true, type: "png" });
 
-  const artifactId = randomUUID();
-  const dir = join(tmpdir(), "verity-artifacts", artifactId);
+  // The cache key covers DOM + styles + screenshot: a page can be
+  // byte-identical in markup while rendering differently (a stylesheet
+  // changed, a swapped image), and those are exactly the changes a
+  // contrast or vision pass must not skip. The network log is deliberately
+  // excluded — request ordering and timing vary run to run, and including
+  // them would defeat caching entirely.
+  const contentHash = createHash("sha256")
+    .update(dom)
+    .update(styles)
+    .update(screenshot)
+    .digest("hex");
+
+  const dir = join(CACHE_ROOT, contentHash);
   await mkdir(dir, { recursive: true });
 
   const domPath = join(dir, "dom.html");
@@ -119,7 +179,10 @@ export async function render(url: string): Promise<RenderResult> {
     writeFile(networkLogPath, JSON.stringify(networkLog, null, 2), "utf8"),
   ]);
 
-  const contentHash = createHash("sha256").update(dom).digest("hex");
+  // artifactId is a live-page handle, deliberately NOT the cache key: two
+  // renders of an unchanged page share a cache directory but must still get
+  // distinct handles, since each holds its own open browser tab.
+  const artifactId = randomUUID();
 
   // Page stays open — runAxe needs a live page to inject axe-core into, not a
   // saved DOM dump. It's handed off by artifactId and closed after runAxe

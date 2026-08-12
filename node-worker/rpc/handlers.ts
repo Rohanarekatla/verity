@@ -8,11 +8,11 @@
  *             produced and returns its bucketed results.
  */
 
-import { Dispatcher, RpcHandlerError } from "../rpc/dispatcher.js";
-import { ErrorCode } from "../rpc/protocol.js";
-import { render } from "../browser/render.js";
-import { runAxeOnPage } from "../browser/axe.js";
-import { takePage } from "../browser/pages.js";
+import { Dispatcher, RpcHandlerError } from "./dispatcher.js";
+import { ErrorCode } from "./protocol.js";
+import { render } from "../crawler/render.js";
+import { runAxeOnPage } from "../static/axe.js";
+import { takePage } from "../crawler/pages.js";
 
 const WORKER_VERSION = "0.1.0";
 const PROTOCOL_VERSION = 1;
