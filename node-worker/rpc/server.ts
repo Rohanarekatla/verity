@@ -24,9 +24,9 @@ import {
   RpcId,
   RpcRequest,
 } from "./protocol.js";
-import { registerHandlers } from "../handlers/index.js";
-import { closeBrowser } from "../browser/instance.js";
-import { closeAllPages } from "../browser/pages.js";
+import { registerHandlers } from "./handlers.js";
+import { closeBrowser } from "../crawler/instance.js";
+import { closeAllPages } from "../crawler/pages.js";
 
 // Must run before anything else can print.
 guardStdout();

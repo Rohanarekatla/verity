@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Verity Node worker: JSON-RPC 2.0 over stdio (browser, axe-core, deterministic capture)",
   "main": "dist/rpc/server.js",
+  "bin": {
+    "verity-worker": "dist/rpc/server.js"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/rpc/server.js",

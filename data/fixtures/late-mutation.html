@@ -1,0 +1,11 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>late</title></head>
+<body><div id="t">initial</div>
+<script>
+// Mutate for ~1.5s after load, then stop. A fixed 500ms sleep would capture
+// mid-mutation; a real settle observer must wait until mutations stop.
+let n = 0;
+const iv = setInterval(() => {
+  document.getElementById('t').textContent = 'mutation ' + (++n);
+  if (n >= 15) { clearInterval(iv); document.getElementById('t').textContent = 'FINAL'; }
+}, 100);
+</script></body></html>
