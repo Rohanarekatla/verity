@@ -8,7 +8,7 @@ from verity.cli import run_cli_scan
 
 @pytest.mark.asyncio
 async def test_run_cli_scan_success(tmp_path: Path):
-    # Mock worker script that simulates Node worker stdout/stdin for 'render' and 'analyze'
+    # Mock worker script that simulates Node worker stdout/stdin for 'render' and 'runAxe'
     mock_worker_script = (
         "import sys, json; "
         "exec('while True:\\n"
@@ -17,7 +17,7 @@ async def test_run_cli_scan_success(tmp_path: Path):
         "  req = json.loads(line)\\n"
         "  m = req.get(\"method\")\\n"
         "  res = {\"jsonrpc\": \"2.0\", \"id\": req[\"id\"]}\\n"
-        "  res[\"result\"] = {\"content_hash\": \"abc1234\"} if m == \"render\" else {\"violations\": [{\"id\": \"color-contrast\", \"wcag_id\": \"1.4.3\", \"help\": \"Low contrast\", \"impact\": \"serious\", \"selector\": \"#btn\", \"description\": \"Text contrast below 4.5:1\"}]}\\n"
+        "  res[\"result\"] = {\"artifactId\": \"art-123\", \"page_state\": {\"content_hash\": \"abc1234\"}} if m == \"render\" else {\"violations\": [{\"id\": \"color-contrast\", \"tags\": [\"wcag143\"], \"help\": \"Low contrast\", \"impact\": \"serious\", \"selector\": \"#btn\", \"description\": \"Text contrast below 4.5:1\"}]}\\n"
         "  print(json.dumps(res))\\n"
         "  sys.stdout.flush()\\n')"
     )
