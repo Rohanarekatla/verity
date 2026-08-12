@@ -264,8 +264,12 @@ Phase 2 is where it would slot.
 
 ### 6.2 Other open items
 
-- [ ] Directory layout: rename to match the Bible, or write an ADR
-      recording the deviation.
+- [x] ~~Directory layout: rename to match the Bible~~ — done;
+      `node-worker/` is now `rpc/`, `crawler/`, `static/`, with
+      `interaction/` and `state_explorer/` placeheld.
 - [ ] Co-sign ADR-0001 (currently unsigned).
+- [ ] **W9 gate (25 Oct):** decide on the two unscheduled scope items
+      in [`ownership-proposal.md`](ownership-proposal.md) — agentless
+      baseline and MCP adapter — against the remaining buffer.
 - [ ] Decide whether `docs/teachback/` starts retroactively at W1 or
       from W2.
