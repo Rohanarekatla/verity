@@ -62,13 +62,18 @@ files to it.
 
 ## How to work in this repo
 
-Two people, two languages, one repo. The split is by directory, not by
-feature — pick your language and you're in the right place.
+Two people, two languages, one repo, organised by directory.
 
-| You are... | You work in | You run |
+| Side | Directories | Test command |
 |---|---|---|
-| **Rohan** (browser, TypeScript, CI surface) | `node-worker/` | `cd node-worker && npm test` *(builds, then runs the 15 protocol tests)* |
-| **Nikhil** (orchestration, ML, Python) | `verity/`, `eval/`, `data/`, `rulepacks/` | `uv run pytest verity/tests/` |
+| **Node** — browser, protocol, CI surface | `node-worker/` | `cd node-worker && npm test` |
+| **Python** — orchestration, models, ML, eval | `verity/`, `eval/`, `data/`, `rulepacks/` | `uv run pytest verity/tests/` |
+
+**Ownership rotates every phase** — neither engineer stays in one lane.
+Current assignments and the rotation schedule are in
+[`docs/team-plan.md`](docs/team-plan.md). A PR into a lane you don't
+currently own gets reviewed by the person who does; that review is the
+point.
 
 You don't need the other side's toolchain installed to work on your
 own — Node isn't required to touch `verity/`, and Python isn't
