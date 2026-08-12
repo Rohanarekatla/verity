@@ -1,0 +1,8 @@
+DIRECTORY: verity/calibration/
+===========================================================
+Owner: Developer B[cite: 1]
+Domain: Confidence calibration and conformal prediction[cite: 2].
+
+Future Files (Phase 3):
+- isotonic.py -> Isotonic regression mapping raw signals to calibrated probabilities[cite: 2]
+- conformal.py -> Risk-level thresholding for 'needs_review' output[cite: 2]

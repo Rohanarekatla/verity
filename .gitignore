@@ -3,8 +3,14 @@ dist/
 *.log
 .DS_Store
 
+# Python-generated files
 __pycache__/
-*.pyc
+*.py[oc]
+build/
+wheels/
+*.egg-info
+
+# Virtual environments
 .venv/
 venv/
 .env

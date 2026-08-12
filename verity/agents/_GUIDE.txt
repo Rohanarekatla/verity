@@ -1,0 +1,10 @@
+DIRECTORY: verity/agents/
+===========================================================
+Owner: Developer B[cite: 1]
+Domain: ML workers and verification agents[cite: 2].
+
+Future Files (Phases 2-4):
+- contrast.py -> Adjudicates axe incomplete contrast findings over images[cite: 1]
+- vision.py -> Qwen3-VL/Florence-2 visual reasoning[cite: 2]
+- audio.py -> Whisper.cpp screen-reader prediction[cite: 2]
+- validator/ -> Dedup, provenance stamping, and severity assignment[cite: 1, 2]

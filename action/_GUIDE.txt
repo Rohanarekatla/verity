@@ -1,0 +1,7 @@
+DIRECTORY: action/
+===========================================================
+Owner: Developer A[cite: 1]
+Week 2 Task: A8.1[cite: 1]
+
+Files:
+- action.yml -> GitHub Action wrapper allowing teams to run Verity in CI[cite: 1, 2]

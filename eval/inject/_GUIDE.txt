@@ -1,0 +1,9 @@
+DIRECTORY: eval/inject/
+===========================================================
+Owner: Developer B[cite: 1]
+Week 1 Task: B1.5[cite: 1]
+
+Files:
+- strip_alt.py -> Reversible DOM transform stripping alt text[cite: 1]
+- detach_label.py -> Reversible DOM transform removing <label> associations[cite: 1]
+- reduce_contrast.py -> Reversible DOM transform dropping contrast below 4.5:1[cite: 1]
