@@ -88,6 +88,13 @@ week. That is the price of eliminating single points of knowledge, and
 it is far cheaper than discovering in month four that only one person
 can debug the calibration layer.
 
+> **Open proposal:** [`ownership-proposal.md`](ownership-proposal.md)
+> argues for rotating along *feature verticals* rather than component
+> boundaries — which would put Engineer A into Python in Week 3 rather
+> than Week 9, at near-zero context-switching cost. It is **not agreed**
+> and requires Nikhil's sign-off, because it reassigns his work. The
+> table above stays authoritative until then.
+
 ### 2.5 Bus-factor test — each phase gate
 
 A 30-minute live exercise: A is handed a deliberately broken version of
