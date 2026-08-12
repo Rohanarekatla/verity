@@ -1,215 +1,257 @@
-# Team Plan — Ownership, Rotation, and Role Targeting
+# Team Operating Doc
 
-**Owner:** Rohan (scrum lead) · **Team:** Rohan (A), Nikhil (B)
-**Goal:** ship Verity *and* have both engineers able to speak to every
-layer of it in an AI Engineer / Agentic AI interview.
+**This document is not the plan.** The plan lives in two source
+documents held outside the repo:
+
+| Document | Defines |
+|---|---|
+| *Verity — The Project Bible v1.0* | *what* is being built and *why* |
+| *Verity — Execution Plan* (20 build weeks, 10 Aug 2026 → 10 Jan 2027) | *who* does what, *in which week*, and *how we know it's done* |
+| *Multi-Agent Agentic AI Engineering in 2026 — Research Brief* | the evidence base for the (unscheduled) remediation layer |
+
+This file is the in-repo operational companion: the rituals in a place
+we'll actually see them, plus the live delta between the plan and the
+repo. **Where this file and the Execution Plan disagree, the Execution
+Plan wins.**
 
 ---
 
-## 1. Why we rotate
+## 1. Team model
 
-The original split was one lane per person: A owns the browser and
-TypeScript, B owns Python, ML, and the trust machinery. That was the
-right call for Week 1 — it let both sides start on day one without
-blocking each other.
+Two engineers, **Engineer A** and **Engineer B**. Assignment is **by
+track, not by seniority** — either person can hold either track.
 
-It's the wrong call from Week 2 onward, for two reasons:
-
-1. **Single points of knowledge.** If only one of us can explain the
-   calibration layer, that's a bus factor of one on the most
-   interesting part of the project.
-2. **It halves each person's interview surface.** Neither of us is
-   applying for "the TypeScript half of a project" roles. We each need
-   to be able to walk an interviewer through the model layer *and* the
-   systems layer.
-
-This was always the intent — the Week 1 design doc already says *"we
-rotate a module at every phase boundary so neither of us becomes a
-single point of knowledge."* It just never got executed. This document
-executes it.
-
-## 2. The rotation rule
-
-> **Every phase, each engineer owns one thing in their strong lane and
-> one thing in their weak lane. The strong-lane person reviews the
-> weak-lane person's PR.**
-
-Reviewing is not optional — it's the mechanism that transfers the
-knowledge. A PR into a lane you don't own gets reviewed by the person
-who does, and the review is where the teaching happens.
-
-**Definition of done for a rotated module:** the person who *didn't*
-write it can explain it end to end without the author present.
-
-## 3. Rotation schedule
-
-| Phase | Rohan (A) | Nikhil (B) |
+| Track | Primary domain | Stack |
 |---|---|---|
-| **P1 · W1–5**<br>De-risking | node-worker RPC, Playwright, axe-core ✅<br>**+ fault injectors** (`eval/inject/`, Python) | schemas, rpc_client, CLI ✅<br>**+ Spike A** (vision precision) |
-| **P2 · W6–9**<br>Vertical slice | **SARIF + GitHub Action** (Python + CI)<br>+ MCP adapter (see §5) | **Interaction Agent** — keyboard traversal, APG contracts (browser work) |
-| **P3 · W10–13**<br>Vision | **Model loader, quantisation, latency budget** (MLX infra) | **Element capture + region grounding** (browser-side) |
-| **P4 · W14–17**<br>Eval | **Calibration** (isotonic, conformal) | **Caching + crawl bounding** (crosses both) |
-| **P5 · W18–20**<br>Launch | Docs, ADR write-ups | Docs, ADR write-ups |
+| **A** | Browser, deterministic testing, CI surface | TypeScript, Node, Playwright, axe-core |
+| **B** | Orchestration, ML, trust machinery, evaluation | Python, asyncio, Pydantic, MLX |
 
-Weak-lane assignments are in **bold**. Note that by Phase 4 each of us
-has touched: browser automation, protocol design, ML serving,
-calibration, eval methodology, and CI.
+Currently: **Rohan = A**, **Nikhil = B**. Both tracks are load-bearing;
+neither is a support role.
 
-## 4. Week 2 assignments (17–23 Aug)
+## 2. Knowledge parity protocol
 
-Week 2 is **Spike A** — the project's #1 risk gate. Read the plan's
-Week 2 section before starting.
+> **The rule: at any point in the project, either engineer must be able
+> to explain, run, and debug any component in the repository.**
 
-### Blocker to clear first
+This does not happen through good intentions. It happens through five
+rituals with specific outputs.
 
-Spike A gates on *"AI-assisted precision ≥ your pre-set bar."* You
-cannot measure precision without labelled data, and **the fault
-injectors don't exist yet** — `eval/inject/` contains only a README.
-The plan itself flags this: *"The fault injector must exist this week.
-You cannot gate Week 2 on precision without labelled data to measure
-against."* It slipped from Week 1.
+### 2.1 Shared Learning Day — Mondays, no code
 
-### Assignments
+| Block | Duration | Who | Content |
+|---|---|---|---|
+| Shared | 60 min | Both, identical material | The core concept for the week |
+| Track | 45 min | Each on their own track | Implementation-specific depth |
 
-**Rohan — fault injectors (`eval/inject/`), Python**
-- `strip_alt.py`, `detach_label.py`, `reduce_contrast.py`
-- Each takes a clean fixture and applies exactly one known defect,
-  reversibly.
-- Each needs a **verification pass**: confirm the injection created
-  the intended defect *and nothing else*. An injector that
-  accidentally masks a second issue silently corrupts every downstream
-  metric.
-- This is a deliberate weak-lane assignment. It's Python, but it's DOM
-  manipulation — you already understand the DOM better than anyone
-  here from the render work. Good bridge task.
-- Nikhil reviews.
+**The 48-hour rule:** anything studied Monday must appear in code by
+Wednesday night. If it doesn't, it was the wrong topic for that week.
 
-**Nikhil — Spike A (vision precision)**
-- Qwen3-VL-8B-Q4 via `mlx-vlm` against the injected corpus.
-- Measure alt-meaningfulness precision, focus-visible precision.
-- Rohan reviews.
+Each Learning Day names a **required artifact** — a written or coded
+output. Both engineers produce it *independently*, then compare at the
+Wednesday sync. Divergence is the earliest possible signal that the two
+of us understand the problem differently.
 
-**Both — Monday, before any code**
-- Write down the **precision bar** — the actual number — before seeing
-  any results. Deciding it afterward is how you talk yourself into a
-  broken differentiator.
-- Also agree the **latency bar**. If a page takes 90 seconds, "runs in
-  CI" is quietly false and we need to know now, not in November.
+### 2.2 Explain-to-approve code review
 
-### Deferred
+Every PR is reviewed by the other engineer. **Approval requires the
+reviewer to write a three-line summary of what the code does, in their
+own words, in the PR comment.**
 
-`action/action.yml` (tagged "Week 2 · A8.1" in the old guide files) is
-**deferred to Week 8**, per the roadmap. An Action wrapper needs SARIF
-output to wrap, and SARIF is a Week 8 deliverable. The Week 2 tag was
-stale.
+Not "LGTM." Not a list of nitpicks. Three lines describing the
+mechanism. If the reviewer can't write them, the PR isn't blocked — but
+the author owes the reviewer a walkthrough before it merges.
 
-## 5. Positioning for AI Engineer / Agentic AI roles
+### 2.3 Sunday teach-back — 30 minutes
 
-Honest assessment of where Verity stands against that target.
+Each engineer teaches the other what they built that week.
 
-### What already lands well for **AI Engineer**
+**The listener writes the notes, not the teacher.** Notes go into
+[`docs/teachback/YYYY-WW.md`](teachback/), committed. A teacher writing
+their own summary proves nothing. A listener producing coherent notes
+proves transmission actually occurred.
 
-These are genuinely strong and most candidates don't have them:
+### 2.4 Rotation at phase boundaries
 
-- **An eval harness with fault injection and prevalence weighting.**
-  Most people applying to AI eng roles have never built an eval set.
-  This is the single most differentiating thing in the plan.
-- **Calibration** — isotonic regression, conformal prediction, the
-  understanding that raw model scores aren't probabilities.
-- **Constrained decoding + mandatory escape values**, and a schema
-  linter that rejects any closed-vocab field lacking an escape. This
-  shows you've thought about the fabrication trap.
-- **LLM-as-judge with a written rubric** (alt-text judgment).
-- **Trust partitioning / provenance** — the model localises,
-  deterministic math decides. This is a real design insight and it's
-  the thing to lead with.
+At the end of each phase, **one module transfers ownership**. The
+outgoing owner does not touch it for the following phase.
 
-**The interview framing to use:** *"I built an ML system where the hard
-problem was knowing when not to trust the model."* That's a senior
-framing, and the calibration + provenance + eval work backs it up.
+| Boundary | Module transferring | From → To |
+|---|---|---|
+| End of Phase 1 (W5) | Static/DOM Agent | A → B |
+| End of Phase 2 (W9) | Confidence & calibration | B → A |
+| End of Phase 3 (W13) | Interaction Agent | A → B |
+| End of Phase 4 (W17) | Report generation | B → A |
 
-### What's missing for **Agentic AI**
+Rotation is uncomfortable and slows the receiving engineer for about a
+week. That is the price of eliminating single points of knowledge, and
+it is far cheaper than discovering in month four that only one person
+can debug the calibration layer.
 
-Currently the things in `verity/agents/` are **pipeline stages, not
-agents**. They run in a fixed order and don't decide anything. There's
-no plan→act→observe→replan loop, no tool selection, no bounded
-autonomy. An interviewer targeting agentic roles will notice.
+### 2.5 Bus-factor test — each phase gate
 
-Three additions close that gap, in order of value per hour spent:
+A 30-minute live exercise: A is handed a deliberately broken version of
+a Track B component and must diagnose it unaided. Then the reverse.
 
-#### (a) Expose the worker as an MCP server — highest leverage
+**Failure is a documentation defect, not a personal one.** The fix is
+to improve the docs and re-run the test the following week.
 
-`node-worker` already speaks **JSON-RPC 2.0 over stdio with
-newline-delimited framing**. That is *literally the MCP stdio
-transport*. ADR 0001 even cites MCP as the reason for choosing this
-shape. We are one thin adapter away from an actual MCP server.
+### 2.6 Decision log
 
-What it takes: the `initialize` handshake, `tools/list`, and
-`tools/call` mapping onto our existing `render` / `runAxe`. Days, not
-weeks.
+Every non-obvious decision becomes an ADR in
+[`docs/adr/NNNN-title.md`](adr/): Context → Decision → Consequences →
+Alternatives rejected. **Both engineers sign every ADR.** If one of us
+doesn't agree or doesn't understand it, it isn't ready to be an ADR.
 
-What it buys: any MCP client (Claude Desktop, Cursor, an agent you
-write) can use Verity as a tool. That turns "accessibility linter"
-into "a tool an AI agent uses to audit pages" — which is exactly the
-Agentic AI story, and it's real, not a demo.
+## 3. Week shape
 
-**Suggested slot: Phase 2, Rohan.** It's browser/protocol adjacent, so
-it's fast for A, and it's the highest-signal single addition available.
+| Day | Block | Hrs each | Content |
+|---|---|---|---|
+| Mon | Learning Day | 1.75 | Shared 60m + track 45m. No code. |
+| Tue | Execution | 2 | Track tasks |
+| Wed | Execution + sync | 2 | Track tasks + 20-min mid-week sync |
+| Thu | Execution | 2 | Track tasks |
+| Fri | Review | 1 | Cross-review the other's open PRs |
+| Sat | Main block | 4.5 | Heaviest task of the week |
+| Sun | Main block + rituals | 3.75 | Finish + teach-back (30m) + gate check (30m) |
 
-#### (b) Make the State Explorer an actual agent loop
+**Mid-week sync (Wed, 20 min, strictly timeboxed):**
+1. Is anything blocked on the other track?
+2. Has anything discovered this week invalidated an assumption in the Bible?
+3. Is the gate still achievable by Sunday? If not, what gets cut *now*
+   rather than Saturday night?
 
-Week 17 already plans a "State Explorer for bounded modals/menus."
-Currently framed as deterministic traversal. Reframe it as a real
-agent loop: *observe page state → decide which interaction to try
-next → act → observe → repeat, under a hard budget.*
+**Non-negotiables:** every week ends with a binary Gate (no partial
+credit); every week has a testable Definition of Done ("works on my
+machine" is not a DoD); the knowledge-parity protocol is not optional
+overhead; when a gate fails twice, **cut scope** — never extend the
+timeline.
 
-That's genuine agentic behaviour (planning, tool use, bounded
-autonomy, termination guarantees) and it's **already on the roadmap** —
-it just needs framing and a decision policy instead of a fixed
-traversal order. Nearly free.
+---
 
-#### (c) Give the validator tool access
+## 4. Status delta — repo vs plan
 
-The adjudication step (dedup, provenance stamping, severity) could
-call back into the browser to gather more evidence before deciding —
-e.g. re-screenshot a region, query the AX tree again. That's tool use
-in service of a decision, which is the core agentic pattern.
+*Last verified: Week 1, after the render/runAxe merge. Update this
+section at each Sunday gate.*
 
-Lower priority than (a) and (b).
+### Week 1 — NOT yet closed
 
-### What we should *not* do
+The Week 1 gate is: *"A real production web page produces a correct
+authoritative contrast finding **through the CLI**."*
 
-Do not pivot the project into a chatbot or a RAG demo to look more
-"AI." Verity's differentiator is that it's a **trust-partitioned ML
-system with a real eval story**. That is rarer and more interesting
-than another RAG app. Add the agentic surface on top; don't trade away
-the foundation.
+| Task | Owner | Status |
+|---|---|---|
+| A1.1 `rpc/server.ts` — JSON-RPC over stdio, `ping`/`render`/`runAxe` | A | ✅ done, 15 protocol tests |
+| A1.2 `render.ts` — Chromium, network-idle + mutation settle | A | ✅ done (settle window is a fixed 500ms wait, **not** a true no-mutations-for-500ms observer capped at 10s — see gap below) |
+| A1.3 `RenderArtifact` capture, cache key | A | ⚠️ partial — five files captured, but written to `os.tmpdir()`, **not** `.verity/cache/<sha256>/`; no element screenshots yet (that's A2.2) |
+| A1.4 `static/axe.ts` — axe-core unmodified, all four arrays | A | ✅ done, all four buckets returned |
+| B1.1 `schemas.py` | B | ✅ done |
+| B1.2 `rpc_client.py` | B | ✅ done |
+| B1.3 `main.py` single-URL pipeline | B | ❌ **broken** — calls a nonexistent `"analyze"` method instead of `"runAxe"`; reads `content_hash` flat instead of nested under `page_state`. See [verity/orchestrator/README.md](../verity/orchestrator/README.md) |
+| B1.4 `cli.py` | B | ⚠️ exists with tests, but inherits B1.3's breakage on a real run |
+| B1.5 `eval/inject/` three fault injectors | B | ❌ **not started** — only a README. Plan states *"The injector must ship this week"* |
+| Pair session: generate TS types from Pydantic JSON Schema | Both | ❌ not done — the TS types are hand-written and match by convention, not generation |
+| ADR-0001 | Both | ⚠️ written, but not co-signed by both engineers |
 
-## 6. Working agreements
+**Two things block the Week 1 gate:** B1.3's wrong method name (the CLI
+cannot complete a scan) and B1.5 (Week 2 cannot measure precision
+without labelled data).
 
-- **Rotation PRs get reviewed by the lane owner.** Non-negotiable —
-  the review is the knowledge transfer.
-- **Sunday gate, 30 minutes, both of us.** Did the gate pass? If not,
-  is it a one-week slip or a design problem? What comes off the list
-  to protect next week?
-- **Slip rule:** if a gate slips two weeks, cut scope. Hold the date.
-  Never cut the eval harness.
-- **Contract changes** (`protocol.ts` ↔ `schemas.py`) need both sides
-  updated in the same PR. See [CONTRIBUTING.md](../CONTRIBUTING.md).
-- **ADRs for non-obvious decisions**, written when the decision is
-  made. These become interview material later — that's a real reason
-  to write them, not a bureaucratic one.
+### Directory layout drift
 
-## 7. Open items
+The Bible specifies `node-worker/crawler/`, `node-worker/static/`,
+`node-worker/interaction/`, `node-worker/state_explorer/`, `rpc/`. The
+repo currently uses `node-worker/src/browser/` and
+`node-worker/src/rpc/`. Functionally equivalent, but worth either
+renaming to match the Bible or recording an ADR that we've deviated —
+before more files land in the wrong place.
 
-- [ ] Confirm the ABC trek dates (blocks Week 6 onward planning —
-      decide before Week 3 so we know whether to compress or accept
-      the shift).
-- [ ] Fix `verity/orchestrator/main.py`: calls a nonexistent
-      `"analyze"` method instead of `"runAxe"`, and reads
-      `content_hash` flat instead of nested under `page_state`. See
-      [verity/orchestrator/README.md](../verity/orchestrator/README.md).
-      **Owner: Nikhil.**
-- [ ] Agree the precision bar and latency bar (Monday W2, in writing,
-      before results).
-- [ ] Decide whether MCP adapter lands in Phase 2 or Phase 3.
+---
+
+## 5. Week 2 (17–23 Aug) — Spike A
+
+⚠️ **The project's #1 risk.** *Can an 8B open vision model make
+accessibility judgments without generating false positives?* If the
+answer is no, the project continues in reduced form — but it must
+continue **knowingly**.
+
+**Monday, before any results are seen:** both engineers independently
+propose a **precision bar** — the specific number below which Vision
+gets descoped — then agree one number and write it down. Setting the
+bar after seeing results is how a broken differentiator survives into
+production. Agree the **latency bar** too.
+
+### Engineer A (Rohan)
+
+| # | Task | Acceptance |
+|---|---|---|
+| A2.1 | Element-level screenshot capture: for any selector, produce a cropped PNG plus its bounding box in CSS pixels and device pixels | Crops align with the element at both 1× and 2× device pixel ratios |
+| A2.2 | Extend `RenderArtifact` with an `element_screenshots` map keyed by selector | Populated for every image and every text node axe flagged as `incomplete` |
+| A2.3 | Build the Spike A corpus harness: run the three Week 1 injectors across 30 clean source pages → ~200 labelled cases | Corpus regenerable from a single command, version-controlled by manifest, **not** by committing binaries |
+
+**A2.3 depends on B1.5 existing.** If the injectors slip further,
+raise it at the Wednesday sync — this is exactly what question 1 of the
+mid-week sync is for.
+
+### Engineer B (Nikhil)
+
+| # | Task |
+|---|---|
+| B2.1 | Qwen3-VL-8B-Instruct at Q4 via mlx-vlm; record cold load, tokens/sec, peak memory in `docs/measurements/spike-a.md` **on the actual target hardware** |
+| B2.2 | Alt-text meaningfulness judge, rubric-based, mandatory `unknown` option |
+| B2.3 | Focus-visible judgment from before/after screenshot pairs |
+| B2.4 | Contrast-region localisation — **the model returns a bounding box only; it is never asked for a ratio** |
+| B2.5 | End-to-end page latency: render → all three tasks → findings emitted |
+
+**Saturday pair session (2 hrs):** review results together, make the
+descope decision **jointly**. Produce **ADR-0002: Vision agent scope**
+recording the measured numbers, the pre-set bar, and the decision —
+whichever way it goes.
+
+**Gate (Sun 23 Aug):** AI-assisted precision ≥ the bar written down on
+Monday. Latency is a *second, independent* gate — if a single page
+takes 90 seconds, "runs in CI" is quietly false and the Week 17
+caching/bounding work must be pulled forward.
+
+---
+
+## 6. Open scrum decisions
+
+### 6.1 The agentic remediation layer is researched but unscheduled
+
+The Research Brief specifies a LangGraph remediation loop (Planner →
+specialist Fixers on disjoint findings → advisory Critic →
+**deterministic Verifier as the only gate**) with its own staged
+timeline: Stage 0 model de-risking (W1–4), Stage 1 *agentless baseline*
+(W4–8), Stage 2 LangGraph (W8–18), Stage 3 self-hosted evals (W12–24),
+Stage 4 security hardening (W18–26).
+
+**None of that appears in the 20-week Execution Plan**, which is
+detection-only. The two documents describe different scopes on
+overlapping weeks.
+
+This matters because the remediation loop is the part of the project
+that most directly serves AI-Engineer / Agentic-AI interviews. Three
+options:
+
+| Option | Cost | Consequence |
+|---|---|---|
+| **Detection only** (current Execution Plan) | 20 weeks as planned | Strong ML-systems + eval story; weak on "have you built an agent?" |
+| **Detection + Stage 1 agentless baseline** | ~2–3 extra weeks | Gets a real fix-loop, a control group, and an honest answer to *"does multi-agent even help?"* — the Brief argues this baseline is the load-bearing artifact regardless |
+| **Full LangGraph loop** | ~8+ extra weeks | Strongest agentic story; materially threatens the 10 Jan date |
+
+**Recommendation: option 2.** The Brief's own guidance is to build the
+agentless baseline *before* the agent loop and only keep the loop if it
+measurably beats the baseline — so the baseline is required work in
+either case, and it's the cheaper half. Decide before Week 6, since
+Phase 2 is where it would slot.
+
+### 6.2 Other open items
+
+- [ ] Confirm the ABC trek dates — decide before Week 3 so we know
+      whether to compress or accept a shift.
+- [ ] Directory layout: rename to match the Bible, or write an ADR
+      recording the deviation.
+- [ ] Co-sign ADR-0001 (currently unsigned).
+- [ ] Decide whether `docs/teachback/` starts retroactively at W1 or
+      from W2.
