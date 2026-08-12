@@ -260,8 +260,6 @@ Phase 2 is where it would slot.
 
 ### 6.2 Other open items
 
-- [ ] Confirm the ABC trek dates — decide before Week 3 so we know
-      whether to compress or accept a shift.
 - [ ] Directory layout: rename to match the Bible, or write an ADR
       recording the deviation.
 - [ ] Co-sign ADR-0001 (currently unsigned).
