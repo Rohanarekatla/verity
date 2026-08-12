@@ -1,20 +1,18 @@
 /**
- * Week 1 method surface.
+ * Method surface.
  *
- * `ping`    — fully implemented. This is today's acceptance criterion.
- * `render`  — declared, stubbed. Built in A1.2 / A1.3 (Wed–Thu).
- * `runAxe`  — declared, stubbed. Built in A1.4.
- *
- * The stubs exist on purpose. Declaring the full method surface now means the
- * Python client can be written against the real contract immediately and can
- * even test its error paths, while the browser work is still in progress.
- * A stub that returns a specific NOT_IMPLEMENTED code is far more useful to the
- * other engineer than a method that simply does not exist, because
- * METHOD_NOT_FOUND is ambiguous: it could mean "not built yet" or "you typo'd".
+ * `ping`    — fully implemented since Week 1 day one.
+ * `render`  — implemented (A1.2/A1.3): navigates, captures a RenderArtifact,
+ *             keeps the page alive for a following runAxe call.
+ * `runAxe`  — implemented (A1.4): injects axe-core into the page render
+ *             produced and returns its bucketed results.
  */
 
 import { Dispatcher, RpcHandlerError } from "../rpc/dispatcher.js";
 import { ErrorCode } from "../rpc/protocol.js";
+import { render } from "../browser/render.js";
+import { runAxeOnPage } from "../browser/axe.js";
+import { takePage } from "../browser/pages.js";
 
 const WORKER_VERSION = "0.1.0";
 const PROTOCOL_VERSION = 1;
@@ -42,37 +40,62 @@ export function registerHandlers(dispatcher: Dispatcher): void {
   );
 
   /**
-   * render — reserved for A1.2 / A1.3.
+   * render — navigate to a URL and capture a RenderArtifact.
    *
-   * Params are validated now even though the body is a stub, so the contract is
-   * exercised from day one and the Python side can write its request-building
-   * code against something that actually rejects bad input.
+   * Returns paths to the captured DOM, AX tree, styles, screenshot, and
+   * network log rather than the content itself — see render.ts for why. The
+   * live page stays open, keyed by the returned artifactId, so a following
+   * runAxe call can inject axe-core into the same page instead of
+   * re-navigating.
    */
   dispatcher.register(
     "render",
-    (params: unknown) => {
+    async (params: unknown) => {
       const url = requireStringParam(params, "url");
-      throw new RpcHandlerError(
-        ErrorCode.NOT_IMPLEMENTED,
-        "render is not implemented yet (scheduled: A1.2/A1.3)",
-        { url, plannedTask: "A1.2/A1.3" },
-      );
+      try {
+        return await render(url);
+      } catch (err) {
+        throw new RpcHandlerError(
+          ErrorCode.RENDER_FAILED,
+          err instanceof Error ? err.message : String(err),
+          { url },
+        );
+      }
     },
     120_000,
   );
 
   /**
-   * runAxe — reserved for A1.4.
+   * runAxe — run axe-core against the page a prior render() produced.
+   *
+   * Consumes the page: it's closed after this call whether it succeeds or
+   * fails, since each artifactId is single-use. Calling runAxe twice on the
+   * same artifactId is a caller error, not a retryable one — re-render if you
+   * need to re-analyze.
    */
   dispatcher.register(
     "runAxe",
-    (params: unknown) => {
+    async (params: unknown) => {
       const artifactId = requireStringParam(params, "artifactId");
-      throw new RpcHandlerError(
-        ErrorCode.NOT_IMPLEMENTED,
-        "runAxe is not implemented yet (scheduled: A1.4)",
-        { artifactId, plannedTask: "A1.4" },
-      );
+      const page = takePage(artifactId);
+      if (!page) {
+        throw new RpcHandlerError(
+          ErrorCode.AXE_FAILED,
+          `no live page for artifactId "${artifactId}" (already consumed, or render did not produce it)`,
+          { artifactId },
+        );
+      }
+      try {
+        return await runAxeOnPage(page);
+      } catch (err) {
+        throw new RpcHandlerError(
+          ErrorCode.AXE_FAILED,
+          err instanceof Error ? err.message : String(err),
+          { artifactId },
+        );
+      } finally {
+        await page.close().catch(() => {});
+      }
     },
     60_000,
   );
