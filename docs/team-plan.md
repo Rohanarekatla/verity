@@ -88,12 +88,16 @@ week. That is the price of eliminating single points of knowledge, and
 it is far cheaper than discovering in month four that only one person
 can debug the calibration layer.
 
-> **Open proposal:** [`ownership-proposal.md`](ownership-proposal.md)
-> argues for rotating along *feature verticals* rather than component
-> boundaries — which would put Engineer A into Python in Week 3 rather
-> than Week 9, at near-zero context-switching cost. It is **not agreed**
-> and requires Nikhil's sign-off, because it reassigns his work. The
-> table above stays authoritative until then.
+> The full week-by-week schedule, with every A/B task and gate, is
+> transcribed in [`execution-plan.md`](execution-plan.md).
+>
+> An earlier proposal to redistribute ownership has been
+> [**withdrawn**](ownership-proposal.md) — it was based on a partial
+> reading of the plan and its premise was false. Engineer A already
+> owns calibration (W12), the schema linter (W11), the fault-injector
+> set and prevalence-weighted corpus (W14), and report generation
+> (W16). Two genuinely unscheduled items survive there for a decision
+> at the W9 gate.
 
 ### 2.5 Bus-factor test — each phase gate
 
