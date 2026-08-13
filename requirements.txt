@@ -4,6 +4,8 @@ annotated-types==0.8.0
     # via
     #   verity (pyproject.toml)
     #   pydantic
+beautifulsoup4==4.15.0
+    # via verity (pyproject.toml)
 colorama==0.4.6
     # via
     #   verity (pyproject.toml)
@@ -36,9 +38,12 @@ pytest==9.1.1
     #   pytest-asyncio
 pytest-asyncio==1.4.0
     # via verity (pyproject.toml)
+soupsieve==2.9.2
+    # via beautifulsoup4
 typing-extensions==4.16.0
     # via
     #   verity (pyproject.toml)
+    #   beautifulsoup4
     #   pydantic
     #   pydantic-core
     #   typing-inspection

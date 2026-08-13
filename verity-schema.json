@@ -1,0 +1,464 @@
+{
+  "$defs": {
+    "AuditReport": {
+      "description": "Final aggregated audit result output.",
+      "properties": {
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "standard": {
+          "enum": [
+            "WCAG2.2-AA",
+            "EN301549",
+            "508",
+            "INT"
+          ],
+          "title": "Standard",
+          "type": "string"
+        },
+        "findings": {
+          "items": {
+            "$ref": "#/$defs/Finding"
+          },
+          "title": "Findings",
+          "type": "array"
+        },
+        "conformance": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Conformance",
+          "type": "object"
+        },
+        "verity_version": {
+          "title": "Verity Version",
+          "type": "string"
+        },
+        "ruleset_version": {
+          "title": "Ruleset Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target",
+        "standard",
+        "findings",
+        "conformance",
+        "verity_version",
+        "ruleset_version"
+      ],
+      "title": "AuditReport",
+      "type": "object"
+    },
+    "BoundingBox": {
+      "description": "Represents element coordinates and size on screen in CSS pixels.",
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "integer"
+        },
+        "y": {
+          "title": "Y",
+          "type": "integer"
+        },
+        "width": {
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "title": "Height",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "title": "BoundingBox",
+      "type": "object"
+    },
+    "Confidence": {
+      "description": "Represents engine confidence in a finding.",
+      "properties": {
+        "score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        },
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "escape_used": {
+          "default": false,
+          "title": "Escape Used",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "score",
+        "method"
+      ],
+      "title": "Confidence",
+      "type": "object"
+    },
+    "Evidence": {
+      "description": "Represents proof and context gathered for a finding.",
+      "properties": {
+        "dom_selector": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dom Selector"
+        },
+        "ax_node_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ax Node Id"
+        },
+        "screenshot_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Screenshot Path"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoundingBox"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "interaction_trace": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interaction Trace"
+        },
+        "computed_values": {
+          "additionalProperties": true,
+          "default": {},
+          "title": "Computed Values",
+          "type": "object"
+        }
+      },
+      "title": "Evidence",
+      "type": "object"
+    },
+    "Finding": {
+      "description": "Represents a single accessibility rule evaluation result.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "sc": {
+          "$ref": "#/$defs/SuccessCriterion"
+        },
+        "provenance": {
+          "$ref": "#/$defs/Provenance"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity"
+        },
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "agent": {
+          "title": "Agent",
+          "type": "string"
+        },
+        "engine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Engine"
+        },
+        "outcome": {
+          "enum": [
+            "fail",
+            "cantTell",
+            "pass"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "remediation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Remediation"
+        },
+        "evidence": {
+          "$ref": "#/$defs/Evidence"
+        },
+        "page_state_hash": {
+          "title": "Page State Hash",
+          "type": "string"
+        },
+        "waived": {
+          "default": false,
+          "title": "Waived",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "sc",
+        "provenance",
+        "severity",
+        "confidence",
+        "agent",
+        "outcome",
+        "message",
+        "evidence",
+        "page_state_hash"
+      ],
+      "title": "Finding",
+      "type": "object"
+    },
+    "Level": {
+      "enum": [
+        "A",
+        "AA",
+        "AAA"
+      ],
+      "title": "Level",
+      "type": "string"
+    },
+    "Modality": {
+      "enum": [
+        "deterministic",
+        "partial",
+        "visual",
+        "interaction",
+        "audio",
+        "manual"
+      ],
+      "title": "Modality",
+      "type": "string"
+    },
+    "PageState": {
+      "description": "Metadata representing the specific page context evaluated.",
+      "properties": {
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "state_label": {
+          "default": "default",
+          "title": "State Label",
+          "type": "string"
+        },
+        "viewport": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "integer"
+            }
+          ],
+          "title": "Viewport",
+          "type": "array"
+        },
+        "media_emulation": {
+          "additionalProperties": true,
+          "default": {},
+          "title": "Media Emulation",
+          "type": "object"
+        },
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "viewport",
+        "content_hash"
+      ],
+      "title": "PageState",
+      "type": "object"
+    },
+    "Provenance": {
+      "enum": [
+        "authoritative",
+        "ai assisted",
+        "needs review"
+      ],
+      "title": "Provenance",
+      "type": "string"
+    },
+    "RenderArtifact": {
+      "description": "Paths to assets captured by Developer A's browser worker.",
+      "properties": {
+        "page_state": {
+          "$ref": "#/$defs/PageState"
+        },
+        "dom_path": {
+          "title": "Dom Path",
+          "type": "string"
+        },
+        "ax_tree_path": {
+          "title": "Ax Tree Path",
+          "type": "string"
+        },
+        "styles_path": {
+          "title": "Styles Path",
+          "type": "string"
+        },
+        "screenshot_full": {
+          "title": "Screenshot Full",
+          "type": "string"
+        },
+        "element_screenshots": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Element Screenshots",
+          "type": "object"
+        },
+        "network_log_path": {
+          "title": "Network Log Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_state",
+        "dom_path",
+        "ax_tree_path",
+        "styles_path",
+        "screenshot_full",
+        "network_log_path"
+      ],
+      "title": "RenderArtifact",
+      "type": "object"
+    },
+    "Severity": {
+      "enum": [
+        "critical",
+        "serious",
+        "moderate",
+        "minor"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "SuccessCriterion": {
+      "description": "Represents a specific WCAG rule.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "level": {
+          "$ref": "#/$defs/Level"
+        },
+        "modality": {
+          "$ref": "#/$defs/Modality"
+        },
+        "obsolete": {
+          "default": false,
+          "title": "Obsolete",
+          "type": "boolean"
+        },
+        "act_rule_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Act Rule Ids",
+          "type": "array"
+        },
+        "techniques": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Techniques",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "level",
+        "modality"
+      ],
+      "title": "SuccessCriterion",
+      "type": "object"
+    }
+  }
+}
