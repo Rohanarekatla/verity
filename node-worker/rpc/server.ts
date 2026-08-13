@@ -24,7 +24,9 @@ import {
   RpcId,
   RpcRequest,
 } from "./protocol.js";
-import { registerHandlers } from "../handlers/index.js";
+import { registerHandlers } from "./handlers.js";
+import { closeBrowser } from "../crawler/instance.js";
+import { closeAllPages } from "../crawler/pages.js";
 
 // Must run before anything else can print.
 guardStdout();
@@ -173,6 +175,15 @@ async function shutdown(code: number): Promise<void> {
     });
   }
 
+  // Phase 3: close the browser. Skipping this on a crash path is how you get
+  // orphaned Chromium processes outliving the worker that spawned them.
+  await closeAllPages();
+  await closeBrowser().catch((err) => {
+    log.error("error closing browser during shutdown", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
+
   process.exit(code);
 }
 
@@ -182,16 +193,18 @@ process.on("SIGINT", () => void shutdown(0));
 /**
  * Last-resort guards. Without these, an unhandled rejection anywhere in the
  * process kills the worker silently and the orchestrator hangs. We log the
- * cause to stderr first so the failure is diagnosable.
+ * cause to stderr first so the failure is diagnosable. Routed through
+ * shutdown() rather than a bare process.exit() so the browser still gets
+ * closed on a crash path.
  */
 process.on("uncaughtException", (err) => {
   log.error("uncaught exception", { error: err.message, stack: err.stack });
-  process.exit(1);
+  void shutdown(1);
 });
 
 process.on("unhandledRejection", (reason) => {
   log.error("unhandled rejection", { reason: String(reason) });
-  process.exit(1);
+  void shutdown(1);
 });
 
 log.info("worker ready", { methods: dispatcher.names(), pid: process.pid });

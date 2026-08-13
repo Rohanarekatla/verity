@@ -110,15 +110,18 @@ test("unknown method returns METHOD_NOT_FOUND and lists what exists", async () =
   assert.deepEqual(frames[0].error.data.available.sort(), ["ping", "render", "runAxe"]);
 });
 
-test("stub methods return NOT_IMPLEMENTED, distinct from METHOD_NOT_FOUND", async () => {
+test("runAxe against an unknown artifactId fails cleanly, not a hang", async () => {
+  // Exercises the AXE_FAILED path without needing a real browser or network
+  // access: an unregistered artifactId is rejected before any page work
+  // happens, which is exactly the boundary this suite is meant to cover.
   const { frames } = await exchange(
-    '{"jsonrpc":"2.0","id":4,"method":"render","params":{"url":"https://example.com"}}\n',
+    '{"jsonrpc":"2.0","id":4,"method":"runAxe","params":{"artifactId":"does-not-exist"}}\n',
   );
-  assert.equal(frames[0].error.code, -31001);
-  assert.match(frames[0].error.message, /not implemented/i);
+  assert.equal(frames[0].error.code, -31004, "AXE_FAILED");
+  assert.match(frames[0].error.message, /no live page/i);
 });
 
-test("stub methods still validate their params", async () => {
+test("render validates its params before touching the browser", async () => {
   const { frames } = await exchange('{"jsonrpc":"2.0","id":5,"method":"render","params":{}}\n');
   assert.equal(frames[0].error.code, -32602, "INVALID_PARAMS");
 });

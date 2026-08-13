@@ -68,7 +68,7 @@ no stack trace. Per-method timeouts (`ping` 5s, `render` 120s, `runAxe`
 
 ## Consequences
 
-- The wire contract lives in `node-worker/src/rpc/protocol.ts` and its
+- The wire contract lives in `node-worker/rpc/protocol.ts` and its
   Python mirror in `verity/models/schemas.py`. Both are the shared
   interface — see [CONTRIBUTING.md](../../CONTRIBUTING.md#the-shared-contract).
 - `stdout` on the Node side is protocol-only; every log line goes to

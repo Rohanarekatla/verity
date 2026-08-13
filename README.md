@@ -16,19 +16,38 @@ for the full rationale.
 
 ## Status
 
-Early. The RPC skeleton between the two languages exists and is
-tested end to end; the data models are defined; the ML agents,
-calibration, and report generators described below are not yet built.
+Early — Week 1 in progress. Working end to end today:
+
+- `render` navigates a real page with Playwright and captures a
+  `RenderArtifact` (DOM, accessibility tree, styles, screenshot,
+  network log).
+- `runAxe` injects `axe-core` into that page and returns its bucketed
+  results.
+- Proven against a fixture with a deliberate contrast violation: one
+  correct, authoritative `color-contrast` finding, zero false
+  positives on a clean fixture — see
+  [`node-worker/test/render-axe.test.mjs`](node-worker/test/render-axe.test.mjs).
+- The Python orchestrator's data models and RPC client are built and
+  tested independently.
+
+Not yet built: the ML agents, calibration, and report generators.
+`verity/orchestrator/main.py`'s scan pipeline also doesn't call
+`render`/`runAxe` correctly yet — see the note in
+[`verity/orchestrator/README.md`](verity/orchestrator/README.md).
 This README will grow a demo, an install path, and a limitations
-table once there's something real to show — see
-[docs/adr/](docs/adr/) and each directory's own `README.md` for
-current state.
+table once there's more to show — see [docs/adr/](docs/adr/) and each
+directory's own `README.md` for current state.
 
 ## Layout
 
 ```
 .
-├── node-worker/          # TypeScript: JSON-RPC worker over stdio (Playwright, axe-core)
+├── node-worker/          # TypeScript: browser + deterministic engines
+│   ├── rpc/               # JSON-RPC 2.0 over stdio: protocol, framing, dispatch, handlers
+│   ├── crawler/            # Chromium lifecycle, render → RenderArtifact, page handoff
+│   ├── static/             # axe-core, accname, geometry, contrast math (authoritative)
+│   ├── interaction/         # Keyboard vs APG contracts (Week 4)
+│   └── state_explorer/       # Bounded modal/menu/error states (Week 17)
 ├── verity/                # Python: orchestration, models, ML agents, calibration, reports
 │   ├── models/            # Pydantic schemas — source of truth for types on both sides
 │   ├── orchestrator/       # Spawns/drives the Node worker; the scan pipeline
@@ -48,13 +67,18 @@ files to it.
 
 ## How to work in this repo
 
-Two people, two languages, one repo. The split is by directory, not by
-feature — pick your language and you're in the right place.
+Two people, two languages, one repo, organised by directory.
 
-| You are... | You work in | You run |
+| Side | Directories | Test command |
 |---|---|---|
-| **Rohan** (browser, TypeScript, CI surface) | `node-worker/` | `cd node-worker && npm test` *(builds, then runs the 15 protocol tests)* |
-| **Nikhil** (orchestration, ML, Python) | `verity/`, `eval/`, `data/`, `rulepacks/` | `uv run pytest verity/tests/` |
+| **Node** — browser, protocol, CI surface | `node-worker/` | `cd node-worker && npm test` |
+| **Python** — orchestration, models, ML, eval | `verity/`, `eval/`, `data/`, `rulepacks/` | `uv run pytest verity/tests/` |
+
+**Ownership rotates every phase** — neither engineer stays in one lane.
+Current assignments and the rotation schedule are in
+[`docs/team-plan.md`](docs/team-plan.md). A PR into a lane you don't
+currently own gets reviewed by the person who does; that review is the
+point.
 
 You don't need the other side's toolchain installed to work on your
 own — Node isn't required to touch `verity/`, and Python isn't
@@ -71,7 +95,7 @@ full contract (see below).
 - A new fault-injection type or accuracy check → `eval/`.
 - A new output format (SARIF, JUnit, ...) → `verity/report/`.
 - A change to what the worker can do (new RPC method, new field on a
-  result) → **both** `node-worker/src/rpc/protocol.ts` and
+  result) → **both** `node-worker/rpc/protocol.ts` and
   `verity/models/schemas.py` in the same PR. This is the one case
   that always touches both directories — see next section.
 
@@ -105,8 +129,8 @@ push and PR, so a break on either side is caught before merge.
 ```bash
 cd node-worker
 npm install
-npm run build
-node --test test/protocol.test.mjs   # 15/15
+npx playwright install chromium   # one-time: browser binary for render/runAxe
+npm test                           # build + protocol suite + render/axe gate tests — 19/19
 ```
 
 ### Python orchestrator
