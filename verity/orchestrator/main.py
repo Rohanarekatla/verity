@@ -24,12 +24,26 @@ logger = logging.getLogger(__name__)
 
 def map_raw_violation_to_finding(raw: dict[str, Any], page_state_hash: str) -> Finding:
     """
-    Transforms a raw violation dictionary (from Developer A's axe-core worker)
+    Transforms a raw violation node dictionary (from Node axe-core worker)
     into a strictly validated Pydantic Finding object.
+    
+    Axe node output shape:
+    {id, impact, tags, description, help, helpUrl, selector, html, failureSummary}
     """
     rule_id = raw.get("id", "unknown-rule")
-    sc_id = raw.get("wcag_id", "1.1.1")
     sc_name = raw.get("help", "Accessibility violation")
+
+    # Map tags to WCAG SC ID if present, otherwise default
+    sc_id = "1.1.1"
+    tags = raw.get("tags", [])
+    if isinstance(tags, list):
+        for tag in tags:
+            if tag.startswith("wcag") and len(tag) >= 7:
+                # e.g., 'wcag111' -> '1.1.1' or 'wcag143' -> '1.4.3'
+                digits = tag.replace("wcag", "").replace("a", "").replace("aa", "").replace("aaa", "")
+                if len(digits) == 3:
+                    sc_id = f"{digits[0]}.{digits[1]}.{digits[2]}"
+                    break
 
     success_criterion = SuccessCriterion(
         id=sc_id,
@@ -38,9 +52,17 @@ def map_raw_violation_to_finding(raw: dict[str, Any], page_state_hash: str) -> F
         modality=Modality.DETERMINISTIC,
     )
 
+    # Build evidence dictionary from raw axe node details
+    computed_details = {
+        "description": raw.get("description", ""),
+        "helpUrl": raw.get("helpUrl", ""),
+        "failureSummary": raw.get("failureSummary", ""),
+        "html": raw.get("html", ""),
+    }
+
     evidence = Evidence(
         dom_selector=raw.get("selector"),
-        computed_values=raw.get("details", {}) if isinstance(raw.get("details"), dict) else {},
+        computed_values=computed_details,
     )
 
     confidence = Confidence(
@@ -55,7 +77,8 @@ def map_raw_violation_to_finding(raw: dict[str, Any], page_state_hash: str) -> F
         logger.warning(f"Unknown severity impact '{raw_impact}' for rule '{rule_id}'. Defaulting to MODERATE.")
         severity = Severity.MODERATE
 
-    selector_hash = hash(str(raw.get("selector", ""))) & 0xFFFF
+    selector_str = str(raw.get("selector", ""))
+    selector_hash = hash(selector_str) & 0xFFFF
 
     return Finding(
         id=f"{rule_id}-{selector_hash:04x}",
@@ -93,14 +116,23 @@ async def scan_url(
     try:
         await client.start()
 
-        # Step 1: Request Page Render from Developer A's worker
+        # Step 1: Request Page Render from Node worker
         logger.info(f"Requesting render for: {url}")
-        render_result = await client.send_request("render", {"url": url})
-        content_hash = render_result.get("content_hash", "default_hash")
+        # Support both .call() and .send_request() depending on RPCClient method name
+        rpc_call = getattr(client, "call", client.send_request)
+        render_result = await rpc_call("render", {"url": url})
 
-        # Step 2: Request Accessibility Analysis from Developer A's worker
-        logger.info(f"Requesting analysis for: {url}")
-        analysis_result = await client.send_request("analyze", {"url": url})
+        # Extract artifactId and nested content_hash under page_state
+        artifact_id = render_result.get("artifactId")
+        if not artifact_id:
+            raise ValueError("Node worker render response missing required 'artifactId' field.")
+
+        page_state = render_result.get("page_state", {})
+        content_hash = page_state.get("content_hash", "default_hash") if isinstance(page_state, dict) else "default_hash"
+
+        # Step 2: Request Accessibility Analysis using 'runAxe' and artifactId
+        logger.info(f"Requesting runAxe analysis for artifact: {artifact_id}")
+        analysis_result = await rpc_call("runAxe", {"artifactId": artifact_id})
         raw_violations = analysis_result.get("violations", [])
 
         # Step 3: Map Raw Violations to Validated Findings
