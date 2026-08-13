@@ -145,7 +145,7 @@ timeline.
 *Last verified: Week 1, after the render/runAxe merge. Update this
 section at each Sunday gate.*
 
-### Week 1 — NOT yet closed
+### Week 1 — gate met, three items still open
 
 The Week 1 gate is: *"A real production web page produces a correct
 authoritative contrast finding **through the CLI**."*
@@ -158,13 +158,18 @@ authoritative contrast finding **through the CLI**."*
 | A1.4 `static/axe.ts` — axe-core unmodified, all four arrays | A | ✅ done, all four buckets returned |
 | B1.1 `schemas.py` | B | ✅ done |
 | B1.2 `rpc_client.py` | B | ✅ done |
-| B1.3 `main.py` single-URL pipeline | B | ❌ **broken** — calls a nonexistent `"analyze"` method instead of `"runAxe"`; reads `content_hash` flat instead of nested under `page_state`. See [verity/orchestrator/README.md](../verity/orchestrator/README.md) |
-| B1.4 `cli.py` | B | ⚠️ exists with tests, but inherits B1.3's breakage on a real run |
+| B1.3 `main.py` single-URL pipeline | B | ✅ fixed by B (92e4f4d) — calls `runAxe` with `artifactId`, reads nested `page_state.content_hash`. Worker path and SC-attribution bugs found in review and fixed since |
+| B1.4 `cli.py` | B | ✅ working — `verity scan <url>` runs end to end; exits 1 on authoritative findings, 0 on a clean page |
 | B1.5 `eval/inject/` three fault injectors | B | ❌ **not started** — only a README. Plan states *"The injector must ship this week"* |
 | Pair session: generate TS types from Pydantic JSON Schema | Both | ❌ not done — the TS types are hand-written and match by convention, not generation |
 | ADR-0001 | Both | ⚠️ written, but not co-signed by both engineers |
 
-**Two things block the Week 1 gate:** B1.3's wrong method name (the CLI
+**GATE MET** — `verity scan <file://.../contrast-fail.html>` emits exactly
+one authoritative SC 1.4.3 finding on `#low-contrast-text` and exits 1;
+the clean fixture emits none and exits 0. Remaining Week 1 items (TS type
+generation, ADR co-signing, B1.5 injectors) are still open.
+
+*Superseded — kept for history:* B1.3's wrong method name (the CLI
 cannot complete a scan) and B1.5 (Week 2 cannot measure precision
 without labelled data).
 

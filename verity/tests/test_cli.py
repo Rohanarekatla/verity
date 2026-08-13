@@ -32,7 +32,10 @@ async def test_run_cli_scan_success(tmp_path: Path):
         worker_cmd=cmd,
     )
 
-    assert exit_code == 0
+    # B1.4: a page with authoritative findings must exit non-zero. The scan
+    # itself succeeded — exit 1 here means "findings gate the build", not
+    # "the tool crashed".
+    assert exit_code == 1
     assert output_file.exists()
 
     # Verify report saved to disk matches expected JSON structure
@@ -40,6 +43,64 @@ async def test_run_cli_scan_success(tmp_path: Path):
     assert data["target"] == "https://example.com"
     assert len(data["findings"]) == 1
     assert data["findings"][0]["sc"]["id"] == "1.4.3"
+
+
+@pytest.mark.asyncio
+async def test_run_cli_scan_clean_page_exits_zero(tmp_path: Path):
+    """B1.4's other half: a clean page exits 0."""
+    mock_worker_script = (
+        "import sys, json; "
+        "exec('while True:\\n"
+        "  line = sys.stdin.readline()\\n"
+        "  if not line: break\\n"
+        "  req = json.loads(line)\\n"
+        "  m = req.get(\"method\")\\n"
+        "  res = {\"jsonrpc\": \"2.0\", \"id\": req[\"id\"]}\\n"
+        "  res[\"result\"] = {\"artifactId\": \"art-123\", \"page_state\": {\"content_hash\": \"abc1234\"}} if m == \"render\" else {\"violations\": []}\\n"
+        "  print(json.dumps(res))\\n"
+        "  sys.stdout.flush()\\n')"
+    )
+
+    exit_code = await run_cli_scan(
+        url="https://example.com",
+        timeout=5.0,
+        worker_cmd=[sys.executable, "-c", mock_worker_script],
+    )
+    assert exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_best_practice_rules_do_not_become_wcag_findings(tmp_path: Path):
+    """
+    axe's `best-practice` rules (region, landmark-one-main) carry no WCAG
+    success-criterion tag. Reporting them as authoritative WCAG failures is a
+    false positive, so they must be excluded from the conformance report --
+    and a page whose only findings are best-practice must exit 0.
+    """
+    mock_worker_script = (
+        "import sys, json; "
+        "exec('while True:\\n"
+        "  line = sys.stdin.readline()\\n"
+        "  if not line: break\\n"
+        "  req = json.loads(line)\\n"
+        "  m = req.get(\"method\")\\n"
+        "  res = {\"jsonrpc\": \"2.0\", \"id\": req[\"id\"]}\\n"
+        "  res[\"result\"] = {\"artifactId\": \"art-123\", \"page_state\": {\"content_hash\": \"abc1234\"}} if m == \"render\" else {\"violations\": [{\"id\": \"region\", \"tags\": [\"cat.keyboard\", \"best-practice\"], \"help\": \"All content should be contained by landmarks\", \"impact\": \"moderate\", \"selector\": \"h1\"}]}\\n"
+        "  print(json.dumps(res))\\n"
+        "  sys.stdout.flush()\\n')"
+    )
+
+    output_file = tmp_path / "bp.json"
+    exit_code = await run_cli_scan(
+        url="https://example.com",
+        output_path=str(output_file),
+        timeout=5.0,
+        worker_cmd=[sys.executable, "-c", mock_worker_script],
+    )
+
+    assert exit_code == 0, "a best-practice-only page must not fail the build"
+    data = json.loads(output_file.read_text(encoding="utf-8"))
+    assert data["findings"] == [], "best-practice rules must not be emitted as WCAG findings"
 
 
 @pytest.mark.asyncio

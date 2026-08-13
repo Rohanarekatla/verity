@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from verity.orchestrator.main import scan_url
-from verity.models.schemas import AuditReport
+from verity.models.schemas import AuditReport, Provenance
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -68,6 +68,23 @@ async def run_cli_scan(
                 f.write(report.model_dump_json(indent=2))
             logger.info(f"Audit report saved successfully to: {out_file.resolve()}")
 
+        # B1.4: non-zero exit when authoritative findings exist, zero on a
+        # clean page. Only AUTHORITATIVE findings gate — AI-assisted and
+        # needs-review annotate but must never fail a build. This is the
+        # default `fail_on: authoritative` policy, hard-coded until the
+        # configurable gating policy lands in Week 8 (B8.4).
+        gating = [
+            f for f in report.findings
+            if f.provenance is Provenance.AUTHORITATIVE
+            and f.outcome == "fail"
+            and not f.waived
+        ]
+        if gating:
+            logger.info(
+                f"{len(gating)} authoritative finding(s) — failing with exit code 1."
+            )
+            return 1
+
         return 0
 
     except Exception as exc:
@@ -78,7 +95,7 @@ async def run_cli_scan(
 def main() -> None:
     """CLI Argument Parser entry point."""
     parser = argparse.ArgumentParser(
-        name="verity",
+        prog="verity",
         description="VERITY: WCAG Accessibility Conformance Engine CLI",
     )
 
