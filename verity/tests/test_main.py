@@ -54,3 +54,50 @@ async def test_scan_url_pipeline_integration():
     assert finding.provenance == Provenance.AUTHORITATIVE
     assert finding.severity == Severity.SERIOUS
     assert finding.agent == "axe-core"
+
+# --- WCAG success-criterion tag extraction ---
+
+def test_extract_sc_id_parses_criterion_tags():
+    from verity.orchestrator.main import extract_sc_id
+
+    assert extract_sc_id(["cat.color", "wcag2aa", "wcag143", "ACT"]) == "1.4.3"
+    assert extract_sc_id(["wcag111"]) == "1.1.1"
+
+
+def test_extract_sc_id_ignores_level_and_category_tags():
+    """
+    Level tags (wcag2a/wcag2aa/wcag22aa) and category tags are not criterion
+    references. Parsing them as one is how a rule gets attributed to the
+    wrong success criterion.
+    """
+    from verity.orchestrator.main import extract_sc_id
+
+    assert extract_sc_id(["wcag2a"]) is None
+    assert extract_sc_id(["wcag2aa"]) is None
+    assert extract_sc_id(["wcag22aa"]) is None
+    assert extract_sc_id(["cat.semantics", "EN-301-549", "RGAAv4"]) is None
+
+
+def test_extract_sc_id_returns_none_for_best_practice_rules():
+    """axe best-practice rules map to no success criterion at all."""
+    from verity.orchestrator.main import extract_sc_id
+
+    assert extract_sc_id(["cat.semantics", "best-practice"]) is None
+    assert extract_sc_id(["cat.keyboard", "best-practice", "RGAA-9.2.1"]) is None
+    assert extract_sc_id([]) is None
+    assert extract_sc_id(None) is None
+
+
+def test_mapping_refuses_to_invent_a_criterion():
+    """
+    Mapping a rule with no WCAG tag must raise rather than silently default.
+    A fabricated SC becomes an authoritative false positive downstream.
+    """
+    import pytest as _pytest
+    from verity.orchestrator.main import map_raw_violation_to_finding
+
+    with _pytest.raises(ValueError, match="no WCAG success-criterion tag"):
+        map_raw_violation_to_finding(
+            {"id": "region", "tags": ["best-practice"], "selector": "h1"},
+            page_state_hash="abc",
+        )
