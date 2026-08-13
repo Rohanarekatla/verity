@@ -3,9 +3,11 @@ Reference client for the Verity Node worker — CONTRACT DEMONSTRATION ONLY.
 
 This is not B1.2. It is the smallest possible thing that proves the contract is
 real, so Engineer B can see the exact wire behaviour rather than reading a
-description of it. The production client (verity/orchestrator/rpc_client.py)
-needs correlation by id, per-call timeouts, typed exceptions, and clean
-shutdown — this has only the first.
+description of it: a real render() against a local fixture, runAxe() against
+the page it produced, and the resulting authoritative contrast finding. The
+production client (verity/orchestrator/rpc_client.py) needs correlation by
+id, per-call timeouts, typed exceptions, and clean shutdown — this has only
+the first.
 
 Run:  python3 contract/reference_client.py
 """
@@ -49,14 +51,24 @@ async def main() -> None:
     # A real client MUST verify this at startup, not on first use.
     assert resp["result"]["protocolVersion"] == 1, "protocol version mismatch"
 
-    print("\n--- stub method (expected: NOT_IMPLEMENTED, code -31001) ---")
-    print(json.dumps(await call(2, "render", {"url": "https://example.com"}), indent=2))
+    fixture = Path(__file__).resolve().parents[2] / "data" / "fixtures" / "contrast-fail.html"
+    print("\n--- render a real page ---")
+    render_resp = await call(2, "render", {"url": fixture.as_uri()})
+    print(json.dumps(render_resp, indent=2))
 
-    print("\n--- param validation on a stub (expected: INVALID_PARAMS, -32602) ---")
-    print(json.dumps(await call(3, "render", {}), indent=2))
+    print("\n--- runAxe against the page render() just produced ---")
+    artifact_id = render_resp["result"]["artifactId"]
+    axe_resp = await call(3, "runAxe", {"artifactId": artifact_id})
+    contrast_findings = [v for v in axe_resp["result"]["violations"] if v["id"] == "color-contrast"]
+    print(f"color-contrast violations found: {len(contrast_findings)}")
+    if contrast_findings:
+        print(json.dumps(contrast_findings[0], indent=2))
+
+    print("\n--- param validation (expected: INVALID_PARAMS, -32602) ---")
+    print(json.dumps(await call(4, "render", {}), indent=2))
 
     print("\n--- unknown method (expected: METHOD_NOT_FOUND, -32601) ---")
-    print(json.dumps(await call(4, "totallyMadeUp"), indent=2))
+    print(json.dumps(await call(5, "totallyMadeUp"), indent=2))
 
     proc.stdin.close()
     await proc.wait()

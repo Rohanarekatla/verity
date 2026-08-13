@@ -1,10 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": ".",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -12,5 +13,11 @@
     "sourceMap": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "rpc/**/*.ts",
+    "crawler/**/*.ts",
+    "static/**/*.ts",
+    "interaction/**/*.ts",
+    "state_explorer/**/*.ts"
+  ]
 }
