@@ -36,10 +36,14 @@ reason for the design.
 
 ### Why JSON-RPC 2.0, not a custom protocol
 
-
+Input-
 {"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {}}
 
+Output-
 {"jsonrpc": "2.0", "id": 1, "result": {"pong": true, "workerVersion": "0.1.0", "protocolVersion": 1}}
+
+Erorr-
+{"jsonrpc": "2.0", "id": 2, "error": {"code": -31001, "message": "render is not implemented yet"}}
 
 -Small, stable, well-documented spec with defined error semantics —
   the part people get wrong when rolling their own.
