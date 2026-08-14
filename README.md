@@ -16,7 +16,7 @@ for the full rationale.
 
 ## Status
 
-Early — Week 1 complete. **`verity scan <url>` runs end to end today:**
+Early — Week 1 complete. **A scan runs end to end today:**
 it renders a real page in Chromium, runs `axe-core` against it, maps
 violations onto validated `Finding` models, and exits non-zero when an
 authoritative finding exists.
@@ -138,6 +138,9 @@ npm test                           # build + protocol suite + render/axe gate te
 ```bash
 uv sync
 uv run pytest verity/tests/
+
+# scan something
+uv run python -m verity.cli scan https://example.com
 ```
 
 ### Prove the cross-language contract
@@ -149,9 +152,9 @@ python3 node-worker/contract/reference_client.py
 
 ## Contributing
 
-See [RUNNING.md](RUNNING.md) to install and run it locally, and
-[CONTRIBUTING.md](CONTRIBUTING.md) for the shared RPC
-contract, and PR conventions.
+[RUNNING.md](RUNNING.md) — install it and run a scan locally.
+[CONTRIBUTING.md](CONTRIBUTING.md) — the shared RPC contract and PR
+conventions.
 
 ## License
 
