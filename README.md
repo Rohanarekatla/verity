@@ -129,17 +129,21 @@ push and PR, so a break on either side is caught before merge.
 ```bash
 cd node-worker
 npm install
-npx playwright install chromium   # one-time: browser binary for render/runAxe
-npm test                           # build + protocol suite + render/axe gate tests — 19/19
+npx playwright install chromium
+npm test
 ```
 
+`npx playwright install` downloads the browser binary (once). `npm test`
+builds, then runs the protocol suite and the render/axe gate tests —
+19/19.
+
 ### Python orchestrator
+
+Run these from the repo root, not from `node-worker/`:
 
 ```bash
 uv sync
 uv run pytest verity/tests/
-
-# scan something
 uv run python -m verity.cli scan https://example.com
 ```
 
