@@ -62,8 +62,8 @@ export const ErrorCode = {
   // --- application-defined, Verity-specific ---
   NOT_IMPLEMENTED: -31001, // method is declared but not built yet
   HANDLER_TIMEOUT: -31002, // handler exceeded its budget
-  RENDER_FAILED: -31003, // reserved for A1.2
-  AXE_FAILED: -31004, // reserved for A1.4
+  RENDER_FAILED: -31003, // navigation or capture failed
+  AXE_FAILED: -31004, // axe injection failed, or no live page for that artifactId
 } as const;
 
 export function makeSuccess(id: RpcId, result: unknown): RpcSuccess {
