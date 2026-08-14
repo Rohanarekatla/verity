@@ -139,18 +139,23 @@ builds, then runs the protocol suite and the render/axe gate tests —
 
 ### Python orchestrator
 
-Run these from the repo root, not from `node-worker/`:
-
 ```bash
+cd ..
 uv sync
 uv run pytest verity/tests/
 uv run python -m verity.cli scan https://example.com
 ```
 
+The leading `cd ..` returns to the repo root after the Node block above.
+The CLI runs as a module, so it must be launched from the root — from
+`node-worker/` it fails with `No module named 'verity'`.
+
 ### Prove the cross-language contract
 
 ```bash
-cd node-worker && npm run build && cd ..
+cd node-worker
+npm run build
+cd ..
 python3 node-worker/contract/reference_client.py
 ```
 

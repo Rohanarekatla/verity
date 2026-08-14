@@ -61,6 +61,7 @@ Against the bundled fixtures — a page with a deliberate contrast
 failure, and its clean twin:
 
 ```bash
+cd ~/Desktop/verity
 uv run python -m verity.cli scan "file://$(pwd)/data/fixtures/contrast-fail.html"
 uv run python -m verity.cli scan "file://$(pwd)/data/fixtures/contrast-pass.html"
 ```
@@ -94,6 +95,7 @@ AI-assisted and needs-review annotate but never fail a build.
 ### Options
 
 ```bash
+cd ~/Desktop/verity
 uv run python -m verity.cli scan <url> --output report.json
 uv run python -m verity.cli scan <url> --timeout 60
 uv run python -m verity.cli scan --help
@@ -126,18 +128,21 @@ Talk to the worker by hand — stderr gets the log line, stdout gets the
 protocol frame:
 
 ```bash
+cd ~/Desktop/verity
 echo '{"jsonrpc":"2.0","id":1,"method":"ping"}' | node node-worker/dist/rpc/server.js
 ```
 
 The full render → runAxe walkthrough, every message printed:
 
 ```bash
+cd ~/Desktop/verity
 python3 node-worker/contract/reference_client.py
 ```
 
 Verbose worker logs (stderr only — stdout stays protocol-clean):
 
 ```bash
+cd ~/Desktop/verity
 VERITY_LOG_LEVEL=debug uv run python -m verity.cli scan https://example.com
 ```
 
@@ -147,6 +152,7 @@ network log for every page scanned. The directory name is the content
 hash, so re-scanning an unchanged page lands in the same place.
 
 ```bash
+cd ~/Desktop/verity
 ls .verity/cache/*/
 ```
 
