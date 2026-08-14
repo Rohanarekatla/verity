@@ -160,8 +160,8 @@ authoritative contrast finding **through the CLI**."*
 | B1.2 `rpc_client.py` | B | ✅ done |
 | B1.3 `main.py` single-URL pipeline | B | ✅ fixed by B (92e4f4d) — calls `runAxe` with `artifactId`, reads nested `page_state.content_hash`. Worker path and SC-attribution bugs found in review and fixed since |
 | B1.4 `cli.py` | B | ✅ working — `verity scan <url>` runs end to end; exits 1 on authoritative findings, 0 on a clean page |
-| B1.5 `eval/inject/` three fault injectors | B | ❌ **not started** — only a README. Plan states *"The injector must ship this week"* |
-| Pair session: generate TS types from Pydantic JSON Schema | Both | ❌ not done — the TS types are hand-written and match by convention, not generation |
+| B1.5 `eval/inject/` three fault injectors | B | ✅ shipped (2dbd7ac) — reversible, unit-tested. Verification half of the criterion added in review; `revert()` is semantically but not byte-identical, see [eval/inject/README.md](../eval/inject/README.md) |
+| Pair session: generate TS types from Pydantic JSON Schema | Both | ⚠️ half done — `export_schema.py` emits `verity-schema.json`, but nothing consumes it; the TS types are still hand-written and match by convention. Generation + CI drift check is **A6.3, Week 6** |
 | ADR-0001 | Both | ⚠️ written, but not co-signed by both engineers |
 
 **GATE MET** — `verity scan <file://.../contrast-fail.html>` emits exactly
