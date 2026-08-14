@@ -23,17 +23,23 @@ cd verity
 
 **1 · Node worker** — installs deps, downloads Chromium, compiles TypeScript
 
+Comments are on their own lines throughout this guide — pasting a
+command with a trailing `# comment` makes tools like `npx` treat the
+comment words as arguments.
+
 ```bash
-cd node-worker
+cd ~/Desktop/verity/node-worker
 npm install
-npx playwright install chromium   # ~180 MB, one time
+npx playwright install chromium
 npm run build
-cd ..
 ```
 
-**2 · Python orchestrator**
+That downloads Chromium (~180 MB) once.
+
+**2 · Python orchestrator** — from the repo root, not `node-worker/`
 
 ```bash
+cd ~/Desktop/verity
 uv sync
 ```
 
@@ -42,7 +48,12 @@ dependencies.
 
 ## Run a scan
 
+**Every command below runs from the repo root.** The CLI is invoked as
+a module, so `verity/` has to be visible from your current directory —
+running it from `node-worker/` fails with `No module named 'verity'`.
+
 ```bash
+cd ~/Desktop/verity
 uv run python -m verity.cli scan https://example.com
 ```
 
@@ -83,32 +94,50 @@ AI-assisted and needs-review annotate but never fail a build.
 ### Options
 
 ```bash
-uv run python -m verity.cli scan <url> --output report.json   # full AuditReport as JSON
-uv run python -m verity.cli scan <url> --timeout 60           # per-RPC-call timeout, seconds
+uv run python -m verity.cli scan <url> --output report.json
+uv run python -m verity.cli scan <url> --timeout 60
 uv run python -m verity.cli scan --help
 ```
 
+`--output` writes the full `AuditReport` as JSON. `--timeout` sets the
+per-RPC-call budget in seconds.
+
 ## Run the tests
 
-```bash
-# Node: 15 protocol tests + 4 browser tests
-cd node-worker && npm test && cd ..
+Node — 15 protocol tests plus 4 browser tests:
 
-# Python: schemas, RPC client, CLI, injectors
-uv run pytest verity/tests/ -v
+```bash
+cd ~/Desktop/verity/node-worker
+npm test
+```
+
+Python — schemas, RPC client, CLI, injectors:
+
+```bash
+cd ~/Desktop/verity
+uv run pytest verity/tests/
 ```
 
 ## Look under the hood
 
+All from the repo root.
+
+Talk to the worker by hand — stderr gets the log line, stdout gets the
+protocol frame:
+
 ```bash
-# Talk to the worker by hand.
-# stderr gets the log line, stdout gets the protocol frame.
 echo '{"jsonrpc":"2.0","id":1,"method":"ping"}' | node node-worker/dist/rpc/server.js
+```
 
-# The full render → runAxe walkthrough, every message printed
+The full render → runAxe walkthrough, every message printed:
+
+```bash
 python3 node-worker/contract/reference_client.py
+```
 
-# Verbose worker logs (stderr only — stdout stays protocol-clean)
+Verbose worker logs (stderr only — stdout stays protocol-clean):
+
+```bash
 VERITY_LOG_LEVEL=debug uv run python -m verity.cli scan https://example.com
 ```
 
@@ -130,8 +159,16 @@ The TypeScript wasn't compiled. `cd node-worker && npm run build`
 Chromium isn't installed. `cd node-worker && npx playwright install chromium`
 
 **`No module named 'verity'`**
-Run from the repo root — the CLI is invoked as a module, so the working
-directory has to be the project root.
+You're in the wrong directory — almost always `node-worker/`. Run
+`cd ~/Desktop/verity` first. The CLI is invoked as a module, so `verity/`
+must be visible from the current directory.
+
+**`pytest: file or directory not found: verity/tests/`**
+Same cause. `cd ~/Desktop/verity` first.
+
+**`npx: Invalid installation targets: '#', 'one-time:', …`**
+A `#` comment got pasted along with the command. Paste only the command
+line.
 
 **Scan hangs on a heavy page**
 `render` has a 120s budget and `runAxe` 60s; both return a timeout error

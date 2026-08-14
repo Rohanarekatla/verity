@@ -20,17 +20,22 @@ dependencies = [
     "typing-extensions==4.16.0",
     "typing-inspection==0.4.3",
 ]
-# No [project.scripts] entry point on purpose. Adding one requires a
-# build backend and an editable install, and on this layout that install
-# produced a .pth the interpreter did not act on — so `verity` failed
-# with ModuleNotFoundError on most invocations. A console script that
-# works intermittently is worse than none: it reads as a broken
-# environment. Run the CLI as a module instead:
+# No console-script entry point, deliberately.
 #
-#     uv run python -m verity.cli scan <url>
+# It needs an editable install, and on this setup both hatchling and
+# setuptools write a .pth file with no trailing newline. CPython's site.py
+# skips that final line, the path (or import hook) is never installed, and
+# `verity` dies with ModuleNotFoundError. Verified by hand: the identical
+# path in a .pth *with* a trailing newline resolves fine. It also failed
+# non-deterministically -- 4 of 8 consecutive runs -- which is worse than
+# failing outright, because it looks like a broken machine rather than a
+# broken package.
 #
-# Revisit if packaging for distribution (Week 19/20), where a real wheel
-# is built rather than an editable install.
+# Run the CLI as a module from the repo root instead:
+#     cd <repo root> && uv run python -m verity.cli scan <url>
+#
+# Revisit at Week 19/20, where packaging for distribution builds a real
+# wheel rather than an editable install and this does not apply.
 [tool.uv]
 package = false
 
