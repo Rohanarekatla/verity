@@ -20,6 +20,20 @@ dependencies = [
     "typing-extensions==4.16.0",
     "typing-inspection==0.4.3",
 ]
+# No [project.scripts] entry point on purpose. Adding one requires a
+# build backend and an editable install, and on this layout that install
+# produced a .pth the interpreter did not act on — so `verity` failed
+# with ModuleNotFoundError on most invocations. A console script that
+# works intermittently is worse than none: it reads as a broken
+# environment. Run the CLI as a module instead:
+#
+#     uv run python -m verity.cli scan <url>
+#
+# Revisit if packaging for distribution (Week 19/20), where a real wheel
+# is built rather than an editable install.
+[tool.uv]
+package = false
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 asyncio_mode = "auto"

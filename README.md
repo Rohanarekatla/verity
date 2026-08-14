@@ -149,7 +149,8 @@ python3 node-worker/contract/reference_client.py
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) — setup, the shared RPC
+See [RUNNING.md](RUNNING.md) to install and run it locally, and
+[CONTRIBUTING.md](CONTRIBUTING.md) for the shared RPC
 contract, and PR conventions.
 
 ## License
