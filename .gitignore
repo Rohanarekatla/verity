@@ -18,3 +18,7 @@ venv/
 
 # Content-addressed render cache
 .verity/
+
+# Scan output written by --output
+report.json
+*.report.json
