@@ -38,6 +38,9 @@ reason for the design.
 
 
 {"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {}}
+
+{"jsonrpc": "2.0", "id": 1, "result": {"pong": true, "workerVersion": "0.1.0", "protocolVersion": 1}}
+
 -Small, stable, well-documented spec with defined error semantics —
   the part people get wrong when rolling their own.
 - It's the same shape used by the Language Server Protocol and MCP:
