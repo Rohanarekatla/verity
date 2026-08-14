@@ -16,27 +16,26 @@ for the full rationale.
 
 ## Status
 
-Early — Week 1 in progress. Working end to end today:
+Early — Week 1 complete. **`verity scan <url>` runs end to end today:**
+it renders a real page in Chromium, runs `axe-core` against it, maps
+violations onto validated `Finding` models, and exits non-zero when an
+authoritative finding exists.
 
-- `render` navigates a real page with Playwright and captures a
-  `RenderArtifact` (DOM, accessibility tree, styles, screenshot,
-  network log).
-- `runAxe` injects `axe-core` into that page and returns its bucketed
-  results.
-- Proven against a fixture with a deliberate contrast violation: one
-  correct, authoritative `color-contrast` finding, zero false
-  positives on a clean fixture — see
-  [`node-worker/test/render-axe.test.mjs`](node-worker/test/render-axe.test.mjs).
-- The Python orchestrator's data models and RPC client are built and
-  tested independently.
+Verified against paired fixtures: the page with a deliberate contrast
+violation yields exactly one authoritative SC 1.4.3 finding on the right
+element and exits 1; the clean page yields none and exits 0. See
+[`node-worker/test/render-axe.test.mjs`](node-worker/test/render-axe.test.mjs).
 
-Not yet built: the ML agents, calibration, and report generators.
-`verity/orchestrator/main.py`'s scan pipeline also doesn't call
-`render`/`runAxe` correctly yet — see the note in
-[`verity/orchestrator/README.md`](verity/orchestrator/README.md).
-This README will grow a demo, an install path, and a limitations
-table once there's more to show — see [docs/adr/](docs/adr/) and each
-directory's own `README.md` for current state.
+Not yet built: the vision and audio agents, calibration, waivers,
+SARIF/VPAT reports, and the GitHub Action. Only findings that map to a
+WCAG success criterion are reported — axe's `best-practice` rules are
+excluded from the conformance report rather than attributed to a
+criterion they don't belong to.
+
+This README will grow a demo, an install path, and an honest
+limitations table as those land — see
+[`docs/execution-plan.md`](docs/execution-plan.md) for the schedule and
+each directory's own `README.md` for current state.
 
 ## Layout
 
@@ -63,7 +62,8 @@ directory's own `README.md` for current state.
 ```
 
 Every directory has its own `README.md` — read that before adding
-files to it.
+files to it. For the Node side, [`node-worker/ARCHITECTURE.md`](node-worker/ARCHITECTURE.md) walks a
+single request from stdin to stdout with diagrams and worked examples.
 
 ## How to work in this repo
 
