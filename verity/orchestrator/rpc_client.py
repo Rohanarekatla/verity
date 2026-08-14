@@ -10,6 +10,14 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# asyncio's StreamReader defaults to a 64 KiB limit per line, and readline()
+# raises ValueError once a line exceeds it. Every real page blows straight
+# through that: a single runAxe frame for a page with ~67 violations is
+# ~370 KB, and WebAIM measures the average homepage at 56 errors. Match the
+# Node side's own framing cap (node-worker/rpc/framing.ts, maxLineBytes) so
+# both ends agree on the largest frame the protocol allows.
+STREAM_LIMIT_BYTES = 64 * 1024 * 1024
+
 
 class RPCClient:
     """
@@ -37,6 +45,7 @@ class RPCClient:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                limit=STREAM_LIMIT_BYTES,
             )
         except FileNotFoundError:
             raise FileNotFoundError(
@@ -88,15 +97,47 @@ class RPCClient:
                 f"RPC request '{method}' (id={request_id}) timed out after {effective_timeout}s."
             )
 
+    def _fail_all_pending(self, exc: BaseException) -> None:
+        """
+        Settle every in-flight request with `exc`.
+
+        If the reader stops for any reason, nothing else will ever resolve
+        these futures and each caller blocks until its own timeout — hiding
+        the real cause behind a misleading "timed out" message. Failing them
+        loudly, immediately, with the actual error is the same principle the
+        Node dispatcher follows: a hang is worse than a failure.
+        """
+        for future in self._pending_requests.values():
+            if not future.done():
+                future.set_exception(exc)
+        self._pending_requests.clear()
+
     async def _read_loop(self) -> None:
         """Background loop reading line-delimited JSON messages from stdout."""
         if self.process is None or self.process.stdout is None:
             return
 
         while True:
-            line = await self.process.stdout.readline()
+            try:
+                line = await self.process.stdout.readline()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # Most likely a frame larger than the stream limit. Without
+                # this, the task dies here and every caller waits out its
+                # timeout for a response that can never arrive.
+                logger.error(f"Reader stopped: {type(exc).__name__}: {exc}")
+                self._fail_all_pending(
+                    RuntimeError(f"RPC reader failed: {type(exc).__name__}: {exc}")
+                )
+                return
+
             if not line:
-                break  # Process stdout closed (EOF)
+                # EOF: the worker exited. Anything still pending never will be.
+                self._fail_all_pending(
+                    RuntimeError("Worker closed stdout before responding.")
+                )
+                break
 
             decoded = line.decode("utf-8").strip()
             if not decoded:

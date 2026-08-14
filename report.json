@@ -1,0 +1,51 @@
+{
+  "target": "file:///Users/rohanarekatla/Desktop/verity/data/fixtures/contrast-fail.html",
+  "standard": "WCAG2.2-AA",
+  "findings": [
+    {
+      "id": "color-contrast-8838",
+      "sc": {
+        "id": "1.4.3",
+        "name": "Elements must meet minimum color contrast ratio thresholds",
+        "level": "AA",
+        "modality": "deterministic",
+        "obsolete": false,
+        "act_rule_ids": [],
+        "techniques": []
+      },
+      "provenance": "authoritative",
+      "severity": "serious",
+      "confidence": {
+        "score": 1.0,
+        "method": "deterministic",
+        "model": null,
+        "escape_used": false
+      },
+      "agent": "axe-core",
+      "engine": "node-worker",
+      "outcome": "fail",
+      "message": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+      "remediation": null,
+      "evidence": {
+        "dom_selector": "#low-contrast-text",
+        "ax_node_id": null,
+        "screenshot_path": null,
+        "region": null,
+        "interaction_trace": null,
+        "computed_values": {
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.13/color-contrast?application=axeAPI",
+          "failureSummary": "Fix any of the following:\n  Element has insufficient color contrast of 1.6 (foreground color: #cccccc, background color: #ffffff, font size: 12.0pt (16px), font weight: normal). Expected contrast ratio of 4.5:1",
+          "html": "<p id=\"low-contrast-text\">This paragraph fails the WCAG AA 4.5:1 contrast threshold on purpose.</p>"
+        }
+      },
+      "page_state_hash": "506e73434b6aeb733e11378f948c70f035ed803545b1b7f1323b08b1e4576747",
+      "waived": false
+    }
+  ],
+  "conformance": {
+    "1.4.3": "fail"
+  },
+  "verity_version": "0.1.0",
+  "ruleset_version": "1.0.0"
+}
