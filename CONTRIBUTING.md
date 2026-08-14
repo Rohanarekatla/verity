@@ -15,6 +15,9 @@ and who's expected to own it.
 
 ### Node worker (`node-worker/`)
 
+New to this side? [`node-worker/ARCHITECTURE.md`](node-worker/ARCHITECTURE.md)
+maps every file onto the path a request takes.
+
 ```bash
 cd node-worker
 npm install
