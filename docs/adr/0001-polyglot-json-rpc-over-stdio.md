@@ -36,7 +36,9 @@ reason for the design.
 
 ### Why JSON-RPC 2.0, not a custom protocol
 
-- Small, stable, well-documented spec with defined error semantics —
+
+{"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {}}
+-Small, stable, well-documented spec with defined error semantics —
   the part people get wrong when rolling their own.
 - It's the same shape used by the Language Server Protocol and MCP:
   editor/agent driving a subprocess over stdio. Following a proven
