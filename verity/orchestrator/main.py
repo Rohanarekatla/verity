@@ -155,6 +155,9 @@ async def scan_url(
             )
         node_worker_command = ["node", str(worker)]
 
+    import time
+    scan_start_time = time.perf_counter()
+
     client = RPCClient(command=node_worker_command, default_timeout=timeout)
 
     try:
@@ -220,6 +223,10 @@ async def scan_url(
         findings = process_findings(findings)
         # Step 4: Build Conformance Map
         conformance_map = {f.sc.id: f.outcome for f in findings}
+
+        scan_end_time = time.perf_counter()
+        total_latency = scan_end_time - scan_start_time
+        logger.info(f"End-to-end page latency: {total_latency:.2f} seconds")
 
         # Step 5: Return Final Audit Report
         return AuditReport(
