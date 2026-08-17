@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Incomplete Contrast Test</title>
+    <style>
+        .bg-image {
+            /* A background image makes static contrast analysis impossible */
+            background-image: url('https://via.placeholder.com/150/000000/FFFFFF');
+            color: #ffffff;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <div class="bg-image" id="text-over-image">
+            This text sits over a background image, forcing axe-core to mark contrast as incomplete.
+        </div>
+    </main>
+</body>
+</html>
