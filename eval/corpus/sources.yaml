@@ -1,0 +1,77 @@
+# Spike A corpus — source pages (A2.3)
+#
+# The corpus is version-controlled by THIS manifest, not by committing the
+# generated HTML. Pages are fetched once and cached; the generator then
+# applies the Week 1 injectors to produce labelled good/bad pairs.
+#
+# Sources are chosen to be clean starting points — pages that should not
+# already contain the defect being injected — so that a finding on the
+# injected copy is attributable to the injection and nothing else.
+#
+# `id` must be stable: it names the output directory and appears in every
+# label, so changing one invalidates comparisons across runs.
+
+sources:
+  # --- W3C WAI ARIA Authoring Practices: canonical accessible widgets ---
+  - id: apg-accordion
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/accordion/examples/accordion/
+  - id: apg-alert
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/alert/examples/alert/
+  - id: apg-breadcrumb
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/breadcrumb/examples/breadcrumb/
+  - id: apg-button
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/button/examples/button/
+  - id: apg-checkbox
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/checkbox/examples/checkbox/
+  - id: apg-combobox
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/combobox/examples/combobox-select-only/
+  - id: apg-dialog
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/examples/dialog/
+  - id: apg-disclosure
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/examples/disclosure-faq/
+  - id: apg-feed
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/feed/examples/feed/
+  - id: apg-grid
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/grid/examples/data-grids/
+  - id: apg-alertdialog
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/alertdialog/examples/alertdialog/
+  - id: apg-link
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/link/examples/link/
+  - id: apg-listbox
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/listbox/examples/listbox-scrollable/
+  - id: apg-menu-button
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/menu-button/examples/menu-button-links/
+  - id: apg-menubar
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/menubar/examples/menubar-navigation/
+  - id: apg-meter
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/meter/examples/meter/
+  - id: apg-radio
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/radio/examples/radio/
+  - id: apg-slider
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/slider/examples/slider-temperature/
+  - id: apg-spinbutton
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/spinbutton/examples/datepicker-spinbuttons/
+  - id: apg-switch
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/switch/examples/switch/
+  - id: apg-table
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/table/examples/table/
+  - id: apg-tabs
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/tabs/examples/tabs-automatic/
+  - id: apg-toolbar
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/toolbar/examples/toolbar/
+  - id: apg-carousel
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/carousel/examples/carousel-1-prev-next/
+  - id: apg-treeview
+    url: https://www.w3.org/WAI/ARIA/apg/patterns/treeview/examples/treeview-navigation/
+
+  # --- W3C Before/After Demo, "after" (the accessible half) ---
+  - id: bad-after-home
+    url: https://www.w3.org/WAI/demos/bad/after/home.html
+  - id: bad-after-news
+    url: https://www.w3.org/WAI/demos/bad/after/news.html
+  - id: bad-after-tickets
+    url: https://www.w3.org/WAI/demos/bad/after/tickets.html
+  - id: bad-after-survey
+    url: https://www.w3.org/WAI/demos/bad/after/survey.html
+  - id: bad-after-template
+    url: https://www.w3.org/WAI/demos/bad/after/template.html
