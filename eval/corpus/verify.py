@@ -86,10 +86,13 @@ async def run() -> int:
     no_manifest = 0
     try:
         for i, c in enumerate(cases, 1):
-            sc = c["expected_sc"]
+            # Any acceptable criterion manifesting counts. axe maps a broken
+            # label to 4.1.2, not the 1.3.1 the injector is named for, so a
+            # single-SC check silently zeroed out every detach_label case.
+            acceptable = c.get("acceptable_sc", [c["expected_sc"]])
             clean = await sc_counts(client, HERE / c["clean_path"])
             bad = await sc_counts(client, HERE / c["injected_path"])
-            delta = bad[sc] - clean[sc]
+            delta = max(bad[sc] - clean[sc] for sc in acceptable)
 
             c["detected"] = delta > 0
             c["detected_delta"] = delta
