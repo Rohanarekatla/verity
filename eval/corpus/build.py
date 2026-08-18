@@ -64,7 +64,8 @@ class Injection:
     """One injector, plus how to find something worth injecting into."""
 
     name: str
-    sc_id: str
+    sc_id: str            # primary/label SC (what appears in reports)
+    acceptable_sc: list   # any of these manifesting counts as detected
     inject: Callable[[str, str], str]
     selector: str
     # Which elements on this page are valid targets for this injector?
@@ -75,6 +76,7 @@ INJECTIONS: list[Injection] = [
     Injection(
         name="strip_alt",
         sc_id="1.1.1",
+        acceptable_sc=["1.1.1"],
         inject=strip_alt.inject,
         selector="img",
         # Only images that HAVE alt — stripping alt from an image that never
@@ -84,6 +86,9 @@ INJECTIONS: list[Injection] = [
     Injection(
         name="detach_label",
         sc_id="1.3.1",
+        # Bible maps a broken label to any of these; axe's `label` rule
+        # reports 4.1.2 for a control that ends up with no accessible name.
+        acceptable_sc=["1.3.1", "4.1.2", "3.3.2"],
         inject=detach_label.inject,
         selector="label",
         targets=lambda soup: [l for l in soup.find_all("label") if l.has_attr("for")],
@@ -91,6 +96,7 @@ INJECTIONS: list[Injection] = [
     Injection(
         name="reduce_contrast",
         sc_id="1.4.3",
+        acceptable_sc=["1.4.3"],
         inject=reduce_contrast.inject,
         selector="p",
         # Needs visible text: recolouring an empty <p> creates no contrast
@@ -276,6 +282,7 @@ def build(*, refetch: bool, offline: bool) -> int:
                     "target_index": idx,
                     "target_tag": marked.name,
                     "expected_sc": inj.sc_id,
+                    "acceptable_sc": inj.acceptable_sc,
                     "expected_outcome": "fail",
                     "expected_defect_count": 1,
                     "clean_path": str((case_dir / "clean.html").relative_to(HERE)),
