@@ -38,6 +38,13 @@ prevalence WebAIM reports for those two failure types.
 expected SC and outcome, content hashes of both halves, and the
 structural verification result.
 
+Of the 197 structurally-valid cases, **117 are confirmed usable** by the
+rendered pass (43 strip_alt, 14 detach_label, 60 reduce_contrast). The
+other 80 injected into elements that don't render a barrier — collapsed
+APG panels, closed dialogs — and are marked `no_manifest`. **Spike A
+measures precision on the 117 `detected` cases only.** These figures move
+if `sources.yaml` changes; re-run `verify.py` after editing it.
+
 ## Two layers of verification
 
 Ground truth that is silently wrong makes every downstream precision
