@@ -3,7 +3,9 @@ verity/orchestrator/main.py
 Main orchestrator pipeline for single-URL accessibility scanning.
 """
 
+from verity.agents.contrast import flag_needs_review
 import logging
+from verity.agents.validator import process_findings
 from pathlib import Path
 from typing import Optional, Any
 
@@ -153,6 +155,9 @@ async def scan_url(
             )
         node_worker_command = ["node", str(worker)]
 
+    import time
+    scan_start_time = time.perf_counter()
+
     client = RPCClient(command=node_worker_command, default_timeout=timeout)
 
     try:
@@ -175,20 +180,16 @@ async def scan_url(
         # Step 2: Request Accessibility Analysis using 'runAxe' and artifactId
         logger.info(f"Requesting runAxe analysis for artifact: {artifact_id}")
         analysis_result = await rpc_call("runAxe", {"artifactId": artifact_id})
+
+        # Extract both buckets
         raw_violations = analysis_result.get("violations", [])
+        raw_incomplete = analysis_result.get("incomplete", [])
 
         # Step 3: Map Raw Violations to Validated Findings
-        #
-        # Rules carrying no WCAG success-criterion tag (axe's `best-practice`
-        # set, e.g. `region`, `landmark-one-main`) are excluded from the WCAG
-        # conformance report — they are genuine findings but not conformance
-        # failures, and emitting them as authoritative would be a false
-        # positive. They are counted and logged, never silently dropped.
-        #
-        # OPEN DECISION (for an ADR): should best-practice findings be
-        # reported in a separate, non-gating section rather than omitted?
         findings: list[Finding] = []
         non_wcag: list[str] = []
+        
+        # Process definitive violations
         for raw_v in raw_violations:
             if not isinstance(raw_v, dict):
                 continue
@@ -199,6 +200,17 @@ async def scan_url(
                 map_raw_violation_to_finding(raw_v, page_state_hash=content_hash)
             )
 
+        # Process incomplete contrast findings
+        for raw_inc in raw_incomplete:
+            if not isinstance(raw_inc, dict):
+                continue
+            # We specifically want to route 'color-contrast' incomplete items to our agent
+            if raw_inc.get("id") == "color-contrast":
+                mapped_finding = map_raw_violation_to_finding(raw_inc, page_state_hash=content_hash)
+                # Override the default AUTHORITATIVE provenance to NEEDS_REVIEW
+                flagged_finding = flag_needs_review(mapped_finding)
+                findings.append(flagged_finding)
+
         if non_wcag:
             logger.info(
                 "Excluded %d non-WCAG (best-practice) finding(s) from the "
@@ -206,9 +218,15 @@ async def scan_url(
                 len(non_wcag),
                 ", ".join(sorted(set(non_wcag))),
             )
-
+            
+        # Step 3.5: Deduplicate and apply waivers
+        findings = process_findings(findings)
         # Step 4: Build Conformance Map
         conformance_map = {f.sc.id: f.outcome for f in findings}
+
+        scan_end_time = time.perf_counter()
+        total_latency = scan_end_time - scan_start_time
+        logger.info(f"End-to-end page latency: {total_latency:.2f} seconds")
 
         # Step 5: Return Final Audit Report
         return AuditReport(

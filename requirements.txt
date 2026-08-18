@@ -39,7 +39,9 @@ pytest==9.1.1
 pytest-asyncio==1.4.0
     # via verity (pyproject.toml)
 soupsieve==2.9.2
-    # via beautifulsoup4
+    # via
+    #   verity (pyproject.toml)
+    #   beautifulsoup4
 typing-extensions==4.16.0
     # via
     #   verity (pyproject.toml)
