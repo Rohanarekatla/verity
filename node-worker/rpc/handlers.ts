@@ -52,8 +52,9 @@ export function registerHandlers(dispatcher: Dispatcher): void {
     "render",
     async (params: unknown) => {
       const url = requireStringParam(params, "url");
+      const dpr = optionalNumberParam(params, "deviceScaleFactor");
       try {
-        return await render(url);
+        return await render(url, dpr === undefined ? {} : { deviceScaleFactor: dpr });
       } catch (err) {
         throw new RpcHandlerError(
           ErrorCode.RENDER_FAILED,
@@ -77,8 +78,8 @@ export function registerHandlers(dispatcher: Dispatcher): void {
     "runAxe",
     async (params: unknown) => {
       const artifactId = requireStringParam(params, "artifactId");
-      const page = takePage(artifactId);
-      if (!page) {
+      const live = takePage(artifactId);
+      if (!live) {
         throw new RpcHandlerError(
           ErrorCode.AXE_FAILED,
           `no live page for artifactId "${artifactId}" (already consumed, or render did not produce it)`,
@@ -86,7 +87,7 @@ export function registerHandlers(dispatcher: Dispatcher): void {
         );
       }
       try {
-        return await runAxeOnPage(page);
+        return await runAxeOnPage(live.page, live.elementDir);
       } catch (err) {
         throw new RpcHandlerError(
           ErrorCode.AXE_FAILED,
@@ -94,11 +95,31 @@ export function registerHandlers(dispatcher: Dispatcher): void {
           { artifactId },
         );
       } finally {
-        await page.close().catch(() => {});
+        await live.page.close().catch(() => {});
       }
     },
     60_000,
   );
+}
+
+/**
+ * Read an optional numeric param, rejecting a present-but-wrong value.
+ *
+ * Absent is fine — it means "use the default". Present and not a positive
+ * finite number is a caller error and must fail loudly rather than being
+ * silently coerced into a default that hides the mistake.
+ */
+function optionalNumberParam(params: unknown, key: string): number | undefined {
+  if (typeof params !== "object" || params === null || Array.isArray(params)) return undefined;
+  const value = (params as Record<string, unknown>)[key];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new RpcHandlerError(
+      ErrorCode.INVALID_PARAMS,
+      `"${key}" must be a positive finite number when provided`,
+    );
+  }
+  return value;
 }
 
 function requireStringParam(params: unknown, key: string): string {

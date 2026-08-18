@@ -18,6 +18,7 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import type { Page } from "playwright";
+import { captureElements, type ElementCapture } from "../crawler/elements.js";
 
 let axeSourceCache: string | null = null;
 
@@ -47,6 +48,16 @@ export interface AxeRunResult {
   passes: AxeNodeResult[];
   incomplete: AxeNodeResult[];
   inapplicable: AxeNodeResult[];
+  /**
+   * A2.2 — crops for the nodes axe marked `incomplete`, keyed by selector.
+   *
+   * These are captured here rather than during render because nothing knows
+   * which nodes are incomplete until axe has run, and this is the last moment
+   * the page is still live. They are the Week 3 contrast-adjudication queue:
+   * the pixels a deterministic pass needs in order to resolve what axe
+   * explicitly declined to judge.
+   */
+  element_screenshots: Record<string, ElementCapture>;
 }
 
 function expandToNodes(bucket: unknown): AxeNodeResult[] {
@@ -71,18 +82,31 @@ function expandToNodes(bucket: unknown): AxeNodeResult[] {
   return out;
 }
 
-export async function runAxeOnPage(page: Page): Promise<AxeRunResult> {
+export async function runAxeOnPage(page: Page, elementDir?: string): Promise<AxeRunResult> {
   const axeSource = await loadAxeSource();
   await page.addScriptTag({ content: axeSource });
 
   const raw = await page.evaluate(() => (window as any).axe.run());
+
+  const incomplete = expandToNodes(raw.incomplete);
+
+  // Crop only the incomplete nodes. Capturing every pass and violation would
+  // mean hundreds of screenshots per page for pixels nothing will ever read.
+  const elementShots = elementDir
+    ? await captureElements(
+        page,
+        incomplete.map((n) => n.selector).filter(Boolean),
+        elementDir,
+      )
+    : {};
 
   return {
     url: page.url(),
     timestamp: new Date().toISOString(),
     violations: expandToNodes(raw.violations),
     passes: expandToNodes(raw.passes),
-    incomplete: expandToNodes(raw.incomplete),
+    incomplete,
     inapplicable: expandToNodes(raw.inapplicable),
+    element_screenshots: elementShots,
   };
 }

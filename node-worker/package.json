@@ -10,7 +10,7 @@
     "build": "tsc",
     "start": "node dist/rpc/server.js",
     "clean": "rm -rf dist",
-    "test": "npm run build && node --test test/protocol.test.mjs test/render-axe.test.mjs"
+    "test": "npm run build && node --test test/protocol.test.mjs test/render-axe.test.mjs test/elements.test.mjs"
   },
   "keywords": [],
   "author": "",

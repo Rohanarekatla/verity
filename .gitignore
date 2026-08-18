@@ -22,3 +22,7 @@ venv/
 # Scan output written by --output
 report.json
 *.report.json
+
+# Generated eval corpus — rebuild with: python -m eval.corpus.build
+eval/corpus/.cache/
+eval/corpus/generated/

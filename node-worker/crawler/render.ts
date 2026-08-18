@@ -17,6 +17,7 @@ import { join } from "node:path";
 import type { Page } from "playwright";
 import { getBrowser } from "./instance.js";
 import { registerPage } from "./pages.js";
+import { captureElements, imageInventory, type ElementCapture } from "./elements.js";
 import { log } from "../rpc/log.js";
 
 /**
@@ -89,7 +90,12 @@ export interface RenderResult {
   ax_tree_path: string;
   styles_path: string;
   screenshot_full: string;
-  element_screenshots: Record<string, never>;
+  /**
+   * A2.2 — crops keyed by selector. Populated here for every image on the
+   * page; runAxe adds the text nodes it marks `incomplete`, since those are
+   * only known once axe has run.
+   */
+  element_screenshots: Record<string, ElementCapture>;
   network_log_path: string;
 }
 
@@ -100,9 +106,22 @@ interface NetworkEntry {
   status: number | null;
 }
 
-export async function render(url: string): Promise<RenderResult> {
+export interface RenderOptions {
+  /**
+   * Device pixel ratio to render at. 1 is a standard display, 2 a Retina
+   * one. It changes how many real pixels back each CSS pixel, so every
+   * element crop and its device-pixel box scale with it — which is exactly
+   * what A2.1's acceptance requires proving.
+   */
+  deviceScaleFactor?: number;
+}
+
+export async function render(url: string, opts: RenderOptions = {}): Promise<RenderResult> {
   const browser = await getBrowser();
-  const context = await browser.newContext({ viewport: VIEWPORT });
+  const context = await browser.newContext({
+    viewport: VIEWPORT,
+    deviceScaleFactor: opts.deviceScaleFactor ?? 1,
+  });
   const page = await context.newPage();
 
   const networkLog: NetworkEntry[] = [];
@@ -179,6 +198,15 @@ export async function render(url: string): Promise<RenderResult> {
     writeFile(networkLogPath, JSON.stringify(networkLog, null, 2), "utf8"),
   ]);
 
+  // A2.2 — crops for every image on the page, written into the same
+  // content-addressed directory. Done after the cache dir exists and while
+  // the page is still live. Text nodes axe marks `incomplete` are captured
+  // by runAxe instead, because nothing knows which they are until axe runs.
+  const elementDir = join(dir, "elements");
+  await mkdir(elementDir, { recursive: true });
+  const elementShots = await captureElements(page, await imageInventory(page), elementDir);
+  log.debug("image crops captured", { count: Object.keys(elementShots).length });
+
   // artifactId is a live-page handle, deliberately NOT the cache key: two
   // renders of an unchanged page share a cache directory but must still get
   // distinct handles, since each holds its own open browser tab.
@@ -187,7 +215,7 @@ export async function render(url: string): Promise<RenderResult> {
   // Page stays open — runAxe needs a live page to inject axe-core into, not a
   // saved DOM dump. It's handed off by artifactId and closed after runAxe
   // consumes it (see pages.ts).
-  registerPage(artifactId, page);
+  registerPage(artifactId, page, elementDir);
 
   log.info("render complete", { artifactId, url: finalUrl });
 
@@ -204,7 +232,7 @@ export async function render(url: string): Promise<RenderResult> {
     ax_tree_path: axTreePath,
     styles_path: stylesPath,
     screenshot_full: screenshotPath,
-    element_screenshots: {},
+    element_screenshots: elementShots,
     network_log_path: networkLogPath,
   };
 }

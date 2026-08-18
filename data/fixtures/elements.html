@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Element capture fixture</title>
+  <style>
+    body { background: #ffffff; font-family: sans-serif; padding: 2rem; margin: 0; }
+    /* Exact, known dimensions so a crop can be checked against them. */
+    #box-img { width: 120px; height: 60px; display: block; }
+    #bg-panel {
+      width: 200px; height: 80px;
+      /* A CSS background-image — the case that is easy to miss and is
+         exactly where text-over-image contrast failures hide. */
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="%23888"/></svg>');
+      color: #999999;
+    }
+    #plain-canvas { width: 90px; height: 40px; display: block; }
+    #tiny { width: 0; height: 0; }
+  </style>
+</head>
+<body>
+  <h1 style="color:#000">Element capture</h1>
+
+  <img id="box-img" alt="A grey square"
+       src='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60"><rect width="120" height="60" fill="%234a90d9"/></svg>' />
+
+  <div id="bg-panel">Text over a background image</div>
+
+  <canvas id="plain-canvas" width="90" height="40"></canvas>
+
+  <svg id="inline-svg" width="50" height="50" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="25" cy="25" r="20" fill="#c0392b" />
+  </svg>
+
+  <!-- Zero-size: must be skipped, not crash the capture pass. -->
+  <img id="tiny" alt="" src='data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg"/>' />
+</body>
+</html>
