@@ -127,6 +127,7 @@ push and PR, so a break on either side is caught before merge.
 ### Node worker
 
 ```bash
+cd node-worker
 npm install
 npx playwright install chromium
 npm test
