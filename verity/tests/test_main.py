@@ -101,3 +101,34 @@ def test_mapping_refuses_to_invent_a_criterion():
             {"id": "region", "tags": ["best-practice"], "selector": "h1"},
             page_state_hash="abc",
         )
+
+
+# --- Week 1 gate regression guard ---
+#
+# The shipped default waivers.yaml must not suppress the gate fixture. A
+# waiver committed against a test fixture once made this exit 0 instead of
+# 1 (the finding was produced correctly but flagged waived), silently
+# defeating the gate. This pins the end-to-end behaviour so it can't
+# regress again without a red test.
+
+@pytest.mark.asyncio
+async def test_week1_gate_fixture_is_authoritative_and_not_waived():
+    import pathlib
+    from verity.models.schemas import Provenance
+
+    fixture = (
+        pathlib.Path(__file__).resolve().parents[2]
+        / "data" / "fixtures" / "contrast-fail.html"
+    )
+    report = await scan_url(fixture.as_uri(), timeout=60.0)
+
+    contrast = [f for f in report.findings if f.sc.id == "1.4.3"]
+    assert len(contrast) == 1, f"expected one 1.4.3 finding, got {len(contrast)}"
+
+    f = contrast[0]
+    assert f.provenance is Provenance.AUTHORITATIVE
+    assert f.outcome == "fail"
+    assert f.waived is False, (
+        "the gate fixture must not be waived by the default config — "
+        "a waiver targeting a test fixture defeats the Week 1 gate"
+    )

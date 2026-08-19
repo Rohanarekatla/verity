@@ -1,6 +1,20 @@
-partialFingerprints:
-  "d0fe78a4b8a5f20168aff8434ffb1a1018edd0be8e059b7b3f6448083acfbb94":
-    justification: "Brand colors explicitly approved by the design team."
-    approved_by: "Design Lead"
-    created: "2026-08-17"
-    expires: "2027-08-17"
+# Waivers — accepted findings that must not fail the build.
+#
+# The shipped default waives NOTHING. A waiver is a per-project decision
+# a team makes about its own site; it must never suppress a finding out
+# of the box, and it must never target a test fixture — that hides
+# exactly the regressions the fixtures exist to catch. (The earlier
+# default here waived the Week 1 gate fixture, which made
+# `verity scan data/fixtures/contrast-fail.html` exit 0 instead of 1.)
+#
+# To add a waiver, key it by the finding's partialFingerprint (the
+# stable signature reported for the finding) and give every field:
+#
+# partialFingerprints:
+#   "<finding signature sha256>":
+#     justification: "Why this is accepted."
+#     approved_by:   "Who approved it."
+#     created:       "2026-08-18"
+#     expires:       "2027-08-18"   # an expired waiver must fail CI (B7.3)
+
+partialFingerprints: {}
