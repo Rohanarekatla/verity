@@ -1,6 +1,6 @@
 # File: verity/agents/contrast.py
 
-from verity.models.schemas import Finding, Provenance
+from verity.models.schemas import Confidence, Finding, Modality, Provenance
 
 def _normalize_srgb(c: int) -> float:
     """
@@ -31,7 +31,22 @@ def flag_needs_review(finding: Finding) -> Finding:
     """
     Incomplete contrast findings must start with NEEDS_REVIEW provenance
     and an outcome of cantTell until adjudicated.
+
+    The confidence and modality are reset alongside them. They arrive from
+    the mapper describing an authoritative axe violation — score 1.0, method
+    "deterministic", modality DETERMINISTIC — and axe's `incomplete` bucket
+    means precisely that axe could *not* decide. Leaving that metadata in
+    place ships a `cantTell` finding claiming full deterministic confidence,
+    and provenance is the one thing in this product that has to be exactly
+    true.
     """
     finding.provenance = Provenance.NEEDS_REVIEW
     finding.outcome = "cantTell"
+    finding.confidence = Confidence(
+        score=0.0,
+        method="axe-incomplete",
+        model=None,
+        escape_used=False,
+    )
+    finding.sc.modality = Modality.PARTIAL
     return finding

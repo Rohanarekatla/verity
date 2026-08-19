@@ -1,70 +1,297 @@
-import time
-from typing import Literal, Optional
-from pydantic import BaseModel, Field
+"""
+verity/agents/vision.py — Spike A vision judgments (B2.2, B2.3, B2.4).
 
-# B2.2: Alt-text meaningfulness judge
+Three judgments, one rule governing all of them: **the model may only report
+what it can see, and must be able to say that it cannot see it.**
+
+Constrained decoding guarantees well-formed output. It does not guarantee
+true output — a required field with no supporting evidence in the image gets
+filled anyway, fluently and confidently. That is the fabrication trap, and it
+is why every schema below has a way out that the decoder can legally take,
+and why the rubrics spend more words on when to answer `unknown` than on
+anything else.
+
+Nothing here computes a contrast ratio, and nothing here invents a
+coordinate. The model localises; the maths decides.
+"""
+
+from typing import Literal, Optional
+
+from pydantic import BaseModel, Field, model_validator
+
+
+# ---------------------------------------------------------------------------
+# B2.2 — Alt-text meaningfulness judge
+# ---------------------------------------------------------------------------
+
+ALT_TEXT_RUBRIC = """\
+You are judging whether an image's alt text would be useful to someone who
+cannot see the image. You can see the image; they cannot.
+
+Answer `yes` only if the alt text conveys the information the image carries
+in its context — what it depicts, or what it does if it is a control.
+
+Answer `no` only if you can see a definite mismatch:
+  - it describes something the image plainly does not show;
+  - it is the filename, dimensions, or a placeholder ("image", "img_4023",
+    "photo", "untitled", "DSC_0001");
+  - it is redundant boilerplate that adds nothing ("image of", "picture of"
+    and nothing else);
+  - the image carries text or data that the alt text omits entirely.
+
+Answer `unknown` in every other case. `unknown` is the correct, expected
+answer — not a failure and not a last resort. Use it whenever:
+  - the image is decorative and you cannot tell whether it is meant to be;
+  - judging the alt text needs surrounding page context you were not given;
+  - the image is too small, blurred, cropped, or ambiguous to identify;
+  - the alt text may be accurate in a context you cannot see;
+  - you would have to guess about the author's intent to answer.
+
+Do not reason about whether the alt attribute exists — that is decided
+deterministically before you are called. Judge only meaningfulness.
+
+Your reasoning must cite what you actually see in the image. If you cannot
+point to something visible that supports `yes` or `no`, the answer is
+`unknown`.
+"""
+
+
 class AltTextJudgment(BaseModel):
     """
     Judge whether the provided alt text is meaningful for the given image.
-    Mandatory 'unknown' option must be used if the model cannot determine it.
+
+    `unknown` is mandatory and load-bearing: an alt-text judgment forced to
+    choose yes/no on an ambiguous image is a false positive generator, and
+    precision is the metric Spike A is gated on.
     """
+
     meaningful: Literal["yes", "no", "unknown"] = Field(
         ...,
-        description="Whether the alt text meaningfully describes the image. Must be 'unknown' if unsure."
+        description=(
+            "Whether the alt text meaningfully describes the image. "
+            "Must be 'unknown' if the image, its purpose, or the needed page "
+            "context is not clear enough to decide."
+        ),
     )
     reasoning: str = Field(
         ...,
-        description="Brief reasoning for the judgment according to the rubric."
+        min_length=1,
+        description=(
+            "What you see in the image that supports this judgment. "
+            "Cite visible evidence, not assumptions about intent."
+        ),
     )
 
-# B2.3: Focus-visible judgment
+
+# ---------------------------------------------------------------------------
+# B2.3 — Focus-visible judgment from before/after pairs
+# ---------------------------------------------------------------------------
+
+FOCUS_VISIBLE_RUBRIC = """\
+You are shown two screenshots of the same element: `before`, with the element
+unfocused, and `after`, with keyboard focus on it. Judge whether a sighted
+keyboard user could tell, from the `after` image alone, which element has
+focus.
+
+Answer `yes` only if you can see a specific change that marks focus — an
+outline, ring, border, background or colour shift, underline, or an added
+indicator — and you could describe where it is.
+
+Answer `no` only if you can see that the two images are equivalent in every
+respect that would signal focus, and the element is plainly interactive.
+
+Answer `unknown` whenever you are not certain the pair shows what it claims:
+  - the two images differ in ways unrelated to focus (scroll position, an
+    animation mid-flight, a hover state, loading content, a caret);
+  - the change is present but so faint, thin, or low-contrast that you cannot
+    tell whether it is an indicator or a rendering artefact;
+  - either image is cut off, blurred, or does not clearly contain the
+    element;
+  - the indicator may fall outside the crop you were given.
+
+`unknown` is the correct answer for an unclear pair. Do not resolve
+uncertainty by picking the more likely option.
+
+Do not judge whether the indicator meets a contrast threshold or a minimum
+size — those are measured, not seen. Report only whether a change is visible.
+"""
+
+
 class FocusVisibleJudgment(BaseModel):
     """
-    Judge whether a focus indicator is visible by comparing a before and after state.
+    Judge whether a focus indicator is visible by comparing a before and
+    after state.
     """
+
     focus_visible: Literal["yes", "no", "unknown"] = Field(
         ...,
-        description="Whether the focus indicator is clearly visible in the 'after' state compared to the 'before' state."
+        description=(
+            "Whether a focus indicator is clearly visible in the 'after' "
+            "state compared to the 'before' state. Must be 'unknown' if the "
+            "pair differs for reasons unrelated to focus, or the change is "
+            "too faint to call."
+        ),
     )
     reasoning: str = Field(
         ...,
-        description="Brief reasoning for why the focus indicator is or is not visible."
+        min_length=1,
+        description=(
+            "The specific visible difference between the two images, and "
+            "where it appears. Say so plainly if there is none."
+        ),
     )
 
-# B2.4: Contrast-region localisation
+
+# ---------------------------------------------------------------------------
+# B2.4 — Contrast-region localisation (bounding box only, never a ratio)
+# ---------------------------------------------------------------------------
+
+CONTRAST_LOCALISATION_RUBRIC = """\
+You are shown a cropped screenshot of one element. Locate the text and the
+background immediately behind it, as bounding boxes.
+
+Return boxes in pixel coordinates relative to the top-left of the image you
+were given, not the page.
+
+Set `located` to `yes` and give both boxes only when you can see text in the
+image and can place a box around it.
+
+Set `located` to `unknown` and give no boxes at all when:
+  - there is no legible text in the crop;
+  - the text is cut off at an edge, so any box would be a guess;
+  - the background behind the text is an image, gradient, video frame, or
+    otherwise not a single region you can enclose;
+  - the crop is blank, blurred, or you cannot tell text from decoration.
+
+Returning no boxes is a valid, expected outcome and is always better than a
+plausible-looking box you cannot actually see. A wrong box is worse than no
+box: the contrast maths downstream trusts these coordinates completely and
+will sample whatever pixels you point it at.
+
+Do NOT report a contrast ratio, a colour, a hex value, or a pass/fail
+judgment. You are not being asked whether the contrast is sufficient, and
+there is no field in which to answer that question. Locate only.
+"""
+
+
 class VisionBoundingBox(BaseModel):
-    x: int
-    y: int
-    width: int
-    height: int
+    """
+    A box the model reported, in pixels relative to the crop it was shown.
+
+    `ge=0` and `gt=0` are enforcement, not decoration: a negative origin or a
+    zero-area box is a model that guessed, and it is cheaper to reject it here
+    than to have the contrast sampler read an empty region and return a
+    confident number about nothing.
+    """
+
+    x: float = Field(..., ge=0)
+    y: float = Field(..., ge=0)
+    width: float = Field(..., gt=0)
+    height: float = Field(..., gt=0)
+
 
 class ContrastRegionLocalisation(BaseModel):
     """
-    Localise the foreground text and background region.
-    The model must return a bounding box only, NEVER a contrast ratio.
+    Localise the foreground text and the background behind it.
+
+    The model returns bounding boxes only, NEVER a contrast ratio — see
+    `CONTRAST_LOCALISATION_RUBRIC`.
+
+    `located` is the escape hatch. Without it, constrained decoding forces a
+    box on every call, including calls where the crop contains no text at
+    all, and the model has no legal way to decline. The boxes are optional
+    and only permitted when `located == "yes"`.
     """
-    foreground_text_bbox: VisionBoundingBox = Field(
+
+    located: Literal["yes", "unknown"] = Field(
         ...,
-        description="Bounding box of the foreground text in CSS pixels. Do NOT compute contrast ratio."
+        description=(
+            "'yes' only if text is visible and both regions can be enclosed. "
+            "'unknown' if there is no legible text, it is cut off, or the "
+            "background is not a single enclosable region. Omit both boxes "
+            "when 'unknown'."
+        ),
     )
-    background_bbox: VisionBoundingBox = Field(
-        ...,
-        description="Bounding box of the relevant background area immediately behind the text in CSS pixels."
+    foreground_text_bbox: Optional[VisionBoundingBox] = Field(
+        default=None,
+        description=(
+            "Bounding box of the foreground text, relative to the supplied "
+            "crop. Do NOT compute a contrast ratio. Null when not located."
+        ),
+    )
+    background_bbox: Optional[VisionBoundingBox] = Field(
+        default=None,
+        description=(
+            "Bounding box of the background immediately behind the text, "
+            "relative to the supplied crop. Null when not located."
+        ),
     )
 
-# Vision Model interface mock / stubs for now
+    @model_validator(mode="after")
+    def _boxes_match_located(self) -> "ContrastRegionLocalisation":
+        """
+        Keep `located` and the boxes honest about each other.
+
+        A model that answers `unknown` and then supplies coordinates anyway
+        has fabricated them, and a model that answers `yes` with nothing to
+        show has fabricated the `yes`. Both are the failure this schema
+        exists to catch, so both are rejected rather than quietly normalised.
+        """
+        has_boxes = self.foreground_text_bbox is not None and self.background_bbox is not None
+        if self.located == "yes" and not has_boxes:
+            raise ValueError(
+                "located='yes' requires both foreground_text_bbox and "
+                "background_bbox"
+            )
+        if self.located == "unknown" and (
+            self.foreground_text_bbox is not None or self.background_bbox is not None
+        ):
+            raise ValueError(
+                "located='unknown' must not carry bounding boxes"
+            )
+        return self
+
+
+# ---------------------------------------------------------------------------
+# Agent surface
+# ---------------------------------------------------------------------------
+
 class VisionAgent:
+    """
+    Stubbed vision agent.
+
+    Track A wires `mlx-vlm` into the three methods below on target hardware
+    (see docs/week2-track-b-handover.md). Each method must pass the matching
+    `*_RUBRIC` as the system prompt and constrain decoding to the matching
+    schema.
+
+    The stubs return the abstaining answer on purpose. If the model is not
+    wired up, every judgment is `unknown` and contributes nothing to the
+    precision measurement — which is the honest result. A stub that returned
+    a confident default would inflate or deflate Sunday's number without
+    anyone noticing.
+    """
+
     def evaluate_alt_text(self, image_path: str, alt_text: str) -> AltTextJudgment:
-        # TODO: wire up mlx-vlm call
-        return AltTextJudgment(meaningful="unknown", reasoning="Not implemented yet.")
-    
-    def evaluate_focus_visible(self, before_img: str, after_img: str) -> FocusVisibleJudgment:
-        # TODO: wire up mlx-vlm call
-        return FocusVisibleJudgment(focus_visible="unknown", reasoning="Not implemented yet.")
-    
-    def localise_contrast_regions(self, image_path: str, selector: str) -> ContrastRegionLocalisation:
-        # TODO: wire up mlx-vlm call
-        return ContrastRegionLocalisation(
-            foreground_text_bbox=VisionBoundingBox(x=0, y=0, width=0, height=0),
-            background_bbox=VisionBoundingBox(x=0, y=0, width=0, height=0)
+        # TODO(Track A): mlx-vlm call, system prompt = ALT_TEXT_RUBRIC,
+        # constrained to AltTextJudgment.
+        return AltTextJudgment(
+            meaningful="unknown",
+            reasoning="Vision model not wired up; abstaining.",
         )
+
+    def evaluate_focus_visible(self, before_img: str, after_img: str) -> FocusVisibleJudgment:
+        # TODO(Track A): mlx-vlm call, system prompt = FOCUS_VISIBLE_RUBRIC,
+        # constrained to FocusVisibleJudgment.
+        return FocusVisibleJudgment(
+            focus_visible="unknown",
+            reasoning="Vision model not wired up; abstaining.",
+        )
+
+    def localise_contrast_regions(
+        self, image_path: str, selector: str
+    ) -> ContrastRegionLocalisation:
+        # TODO(Track A): mlx-vlm call, system prompt =
+        # CONTRAST_LOCALISATION_RUBRIC, constrained to
+        # ContrastRegionLocalisation.
+        return ContrastRegionLocalisation(located="unknown")
