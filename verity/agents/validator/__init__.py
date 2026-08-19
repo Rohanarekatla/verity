@@ -1,3 +1,15 @@
-from .dedup import process_findings, generate_finding_signature
+from .dedup import (
+    DEFAULT_WAIVERS_PATH,
+    generate_finding_signature,
+    load_waivers,
+    process_findings,
+    signature_for,
+)
 
-__all__ = ["process_findings", "generate_finding_signature"]
+__all__ = [
+    "DEFAULT_WAIVERS_PATH",
+    "generate_finding_signature",
+    "load_waivers",
+    "process_findings",
+    "signature_for",
+]
