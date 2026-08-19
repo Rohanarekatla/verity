@@ -38,6 +38,17 @@
         "ruleset_version": {
           "title": "Ruleset Version",
           "type": "string"
+        },
+        "latency": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Latency"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -52,23 +63,23 @@
       "type": "object"
     },
     "BoundingBox": {
-      "description": "Represents element coordinates and size on screen in CSS pixels.",
+      "description": "A rectangle on the rendered page.\n\nFloats, not ints: `getBoundingClientRect()` returns subpixel values, and\nmultiplying a CSS box by a fractional device-pixel ratio produces more of\nthem. Rounding at the boundary would silently move every box by up to a\npixel before the contrast math (Week 3) ever samples it.\n\nThe coordinate system is *not* implied by this type \u2014 whoever holds a box\nmust say which space it is in. See `ElementCapture`.",
       "properties": {
         "x": {
           "title": "X",
-          "type": "integer"
+          "type": "number"
         },
         "y": {
           "title": "Y",
-          "type": "integer"
+          "type": "number"
         },
         "width": {
           "title": "Width",
-          "type": "integer"
+          "type": "number"
         },
         "height": {
           "title": "Height",
-          "type": "integer"
+          "type": "number"
         }
       },
       "required": [
@@ -116,6 +127,38 @@
         "method"
       ],
       "title": "Confidence",
+      "type": "object"
+    },
+    "ElementCapture": {
+      "description": "One element-level screenshot (A2.1), with its box in both coordinate\nsystems.\n\nThis mirrors the `ElementCapture` interface in\n`node-worker/crawler/elements.ts` exactly. It is a cross-language\ncontract: if the two drift, the Vision agent is handed coordinates that\ndo not describe the PNG it is looking at.\n\nBoth boxes are stored rather than one plus a multiplication, because\nre-deriving `box_device` from `box_css` at each consumer is how\noff-by-a-scale-factor bugs get in. `device_pixel_ratio` is recorded as\nmeasured, not assumed.",
+      "properties": {
+        "selector": {
+          "title": "Selector",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "box_css": {
+          "$ref": "#/$defs/BoundingBox"
+        },
+        "box_device": {
+          "$ref": "#/$defs/BoundingBox"
+        },
+        "device_pixel_ratio": {
+          "title": "Device Pixel Ratio",
+          "type": "number"
+        }
+      },
+      "required": [
+        "selector",
+        "path",
+        "box_css",
+        "box_device",
+        "device_pixel_ratio"
+      ],
+      "title": "ElementCapture",
       "type": "object"
     },
     "Evidence": {
@@ -194,10 +237,14 @@
       "type": "object"
     },
     "Finding": {
-      "description": "Represents a single accessibility rule evaluation result.",
+      "description": "Represents a single accessibility rule evaluation result.\n\n`rule_id` is the engine's own rule name (`color-contrast`, `image-alt`)\nand is carried verbatim. `id` is this finding's identity, derived from\nthe rule and the selector. They are separate fields because the dedup\nsignature needs the rule, and recovering it by string-surgery on `id`\ncouples dedup to whatever format `id` happens to use this week.",
       "properties": {
         "id": {
           "title": "Id",
+          "type": "string"
+        },
+        "rule_id": {
+          "title": "Rule Id",
           "type": "string"
         },
         "sc": {
@@ -268,6 +315,7 @@
       },
       "required": [
         "id",
+        "rule_id",
         "sc",
         "provenance",
         "severity",
@@ -279,6 +327,30 @@
         "page_state_hash"
       ],
       "title": "Finding",
+      "type": "object"
+    },
+    "Latency": {
+      "description": "Wall-clock cost of one page scan (B2.5).\n\nWeek 2's second gate is a latency gate: if a page takes 90 s, \"runs in\nCI\" is quietly false. That gate needs a number in the report, not a line\nin a log that default logging levels discard.\n\nThe phases are broken out because the descope decision differs by\nculprit \u2014 a slow render is Week 17's caching problem, slow analysis is\nnot.",
+      "properties": {
+        "render_seconds": {
+          "title": "Render Seconds",
+          "type": "number"
+        },
+        "analysis_seconds": {
+          "title": "Analysis Seconds",
+          "type": "number"
+        },
+        "total_seconds": {
+          "title": "Total Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "render_seconds",
+        "analysis_seconds",
+        "total_seconds"
+      ],
+      "title": "Latency",
       "type": "object"
     },
     "Level": {
@@ -380,7 +452,7 @@
         },
         "element_screenshots": {
           "additionalProperties": {
-            "type": "string"
+            "$ref": "#/$defs/ElementCapture"
           },
           "default": {},
           "title": "Element Screenshots",
