@@ -26,3 +26,6 @@ report.json
 # Generated eval corpus — rebuild with: python -m eval.corpus.build
 eval/corpus/.cache/
 eval/corpus/generated/
+
+# Spike A vision measurement outputs
+eval/vision/results.json

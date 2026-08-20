@@ -1,0 +1,18 @@
+{
+  "_note": "Alt-text meaningfulness ground truth for Spike A (B2.2). Each image in data/fixtures/vision-gallery.html gets one meaningful alt (label yes) and three placeholder alts (label no). Placeholder alts are ironclad negatives — a filename or 'image' is not meaningful regardless of what the image shows. The judge should return 'no' on negatives and 'yes'/'unknown' on positives; a 'no' on a positive is a false positive.",
+  "images": {
+    "v-sale":     { "content": "a red banner reading SALE 50% OFF",  "good_alt": "Sale banner: 50% off" },
+    "v-stop":     { "content": "a red octagonal stop sign",           "good_alt": "Stop sign" },
+    "v-check":    { "content": "a green circle with a white checkmark","good_alt": "Success checkmark" },
+    "v-info":     { "content": "a blue circle with an information i",  "good_alt": "Information icon" },
+    "v-chart":    { "content": "a bar chart with three blue bars",    "good_alt": "Bar chart of three values" },
+    "v-warning":  { "content": "an orange warning triangle",          "good_alt": "Warning" },
+    "v-mail":     { "content": "an envelope email icon",              "good_alt": "Email" },
+    "v-search":   { "content": "a magnifying glass search icon",      "good_alt": "Search" },
+    "v-404":      { "content": "large red text reading 404",          "good_alt": "404 page not found" },
+    "v-home":     { "content": "a house home icon",                   "good_alt": "Home" },
+    "v-download": { "content": "a green downward download arrow",     "good_alt": "Download" },
+    "v-star":     { "content": "a yellow five-pointed star",          "good_alt": "Star rating" }
+  },
+  "placeholder_alts": ["IMG_4023.jpg", "image", "photo"]
+}
