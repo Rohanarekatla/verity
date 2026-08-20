@@ -296,7 +296,12 @@ class VisionAgent:
     def evaluate_alt_text(self, image_path: str, alt_text: str) -> AltTextJudgment:
         raw = self.backend.complete_json(
             system=ALT_TEXT_RUBRIC,
-            user=f"The alt text to judge is: {alt_text!r}",
+            user=(
+                f"The alt text to judge is: {alt_text!r}\n\n"
+                'Reply with a JSON object with exactly these keys:\n'
+                '{"meaningful": "yes" | "no" | "unknown", '
+                '"reasoning": "<what you see that supports this>"}'
+            ),
             images=[image_path],
         )
         return _parse_or_abstain(
@@ -311,7 +316,12 @@ class VisionAgent:
     def evaluate_focus_visible(self, before_img: str, after_img: str) -> FocusVisibleJudgment:
         raw = self.backend.complete_json(
             system=FOCUS_VISIBLE_RUBRIC,
-            user="Image 1 is `before` (unfocused); image 2 is `after` (focused).",
+            user=(
+                "Image 1 is `before` (unfocused); image 2 is `after` (focused).\n\n"
+                'Reply with a JSON object with exactly these keys:\n'
+                '{"focus_visible": "yes" | "no" | "unknown", '
+                '"reasoning": "<the specific visible difference, or that there is none>"}'
+            ),
             images=[before_img, after_img],
         )
         return _parse_or_abstain(
@@ -328,7 +338,14 @@ class VisionAgent:
     ) -> ContrastRegionLocalisation:
         raw = self.backend.complete_json(
             system=CONTRAST_LOCALISATION_RUBRIC,
-            user=f"Locate the text and its background in this crop of element {selector!r}.",
+            user=(
+                f"Locate the text and its background in this crop of element {selector!r}.\n\n"
+                'Reply with a JSON object. If you can see and place the text:\n'
+                '{"located": "yes", '
+                '"foreground_text_bbox": {"x": <n>, "y": <n>, "width": <n>, "height": <n>}, '
+                '"background_bbox": {"x": <n>, "y": <n>, "width": <n>, "height": <n>}}\n'
+                'If you cannot, give no boxes:\n{"located": "unknown"}'
+            ),
             images=[image_path],
         )
         return _parse_or_abstain(
