@@ -82,15 +82,23 @@ Agreed and written down before results existed:
 > - **Vision stays, caching pulled forward** — precision met, latency
 >   between the soft and hard bars; Week 17's caching work moves earlier.
 
-_Result against the bar:_
+_Result against the bar (alt-text, B2.2; measured 2026-08-18, 7B-4bit
+stand-in on M4/16 GB — see [`../measurements/spike-a.md`](../measurements/spike-a.md)):_
 
 | Measure | Bar | Actual | Met? |
 |---|---|---|---|
-| Precision (point estimate) | | | |
-| Precision (95% CI lower bound) | | | |
-| Abstention rate | | | |
-| Median page latency | | | |
-| p95 page latency | | | |
+| Precision (point estimate) | ≥ 0.95 | n/a — 0 findings | — |
+| Precision (95% CI lower bound) | ≥ 0.90 | n/a — 0 findings | — |
+| Recall on placeholders | secondary | 0 / 36 | ✗ |
+| Abstention rate | ceiling | 79% | ✗ |
+| Per-judgment latency | — | 5.0 s mean / 10.5 s max | — |
+
+**The model produced zero `no` verdicts across 48 cases — it abstained
+rather than fabricated.** Precision is undefined because there are no
+findings to be precise about; the failure is on recall and abstention,
+not false positives. Focus-visible (B2.3) and a labelled contrast-
+localisation set were not measurable this week (see Context). The number
+above is from a 7B-4bit proxy, not the specified 8B build.
 
 ---
 

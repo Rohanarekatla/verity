@@ -36,17 +36,23 @@ primary.
 
 ```bash
 cd ~/Desktop/verity
-uv pip install mlx-vlm
+uv pip install mlx-vlm jinja2   # jinja2 is needed for the chat template and mlx-vlm does not always pull it
 
 # Pick a 4-bit Qwen VL build (~5-8 GB download, one time).
 export VERITY_VISION_BACKEND=mlx
 export VERITY_MLX_MODEL="mlx-community/Qwen2.5-VL-7B-Instruct-4bit"
 ```
 
-Then wire it into a measurement script over the Spike A corpus
-(`eval/corpus/generated/`, the 117 `detected` cases) and record into
-[`docs/measurements/spike-a.md`](measurements/spike-a.md): cold-load
-seconds, tokens/sec, peak memory, and per-task precision/recall/FP.
+Then run the harness — it renders the vision gallery, runs the alt-text
+judge on all 48 cases, and reports precision as a Wilson 95% interval:
+
+```bash
+uv run python -m eval.vision.measure
+```
+
+Results land in `eval/vision/results.json`; record the headline numbers and
+the hardware (cold-load seconds, tokens/sec, peak memory) into
+[`docs/measurements/spike-a.md`](measurements/spike-a.md).
 
 **16 GB caveat (measure, don't assume):** an 8B VL model at Q4 is ~8–12 GB;
 the research brief recommends 32 GB for comfort. On 16 GB it should run
