@@ -15,9 +15,12 @@ Nothing here computes a contrast ratio, and nothing here invents a
 coordinate. The model localises; the maths decides.
 """
 
-from typing import Literal, Optional
+from typing import Callable, Literal, Optional, TYPE_CHECKING, TypeVar
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
+
+if TYPE_CHECKING:
+    from verity.agents.vision_backends import VisionBackend
 
 
 # ---------------------------------------------------------------------------
@@ -258,40 +261,103 @@ class ContrastRegionLocalisation(BaseModel):
 
 class VisionAgent:
     """
-    Stubbed vision agent.
+    Vision agent over a pluggable backend (see vision_backends.py).
 
-    Track A wires `mlx-vlm` into the three methods below on target hardware
-    (see docs/week2-track-b-handover.md). Each method must pass the matching
-    `*_RUBRIC` as the system prompt and constrain decoding to the matching
-    schema.
+    Each method passes its `*_RUBRIC` as the system prompt, sends the image(s),
+    and validates the backend's JSON against the matching schema. The backend
+    decides *where* the model runs — mlx-vlm on this Mac, a vLLM/Ollama server,
+    or nothing at all — without changing a line here.
 
-    The stubs return the abstaining answer on purpose. If the model is not
-    wired up, every judgment is `unknown` and contributes nothing to the
-    precision measurement — which is the honest result. A stub that returned
-    a confident default would inflate or deflate Sunday's number without
-    anyone noticing.
+    The default backend abstains, so `VisionAgent()` with no model provisioned
+    returns `unknown` for everything. That is deliberate: an un-wired agent
+    contributes nothing to the precision measurement rather than inventing a
+    confident default that would move Sunday's number unnoticed. And because
+    validation failures also fall back to `unknown`, a model that emits
+    malformed or off-schema output can never fabricate a judgment — abstention
+    is the only way a call can go wrong.
+
+    Provision a real backend with `VisionAgent.from_env()` plus the env vars
+    documented in vision_backends.backend_from_env().
     """
 
+    def __init__(self, backend: Optional["VisionBackend"] = None):
+        # Imported lazily so importing the schemas never pulls in the backend
+        # machinery, and so a checkout with no ML deps still loads cleanly.
+        from verity.agents.vision_backends import AbstainBackend
+
+        self.backend = backend if backend is not None else AbstainBackend()
+
+    @classmethod
+    def from_env(cls) -> "VisionAgent":
+        from verity.agents.vision_backends import backend_from_env
+
+        return cls(backend_from_env())
+
     def evaluate_alt_text(self, image_path: str, alt_text: str) -> AltTextJudgment:
-        # TODO(Track A): mlx-vlm call, system prompt = ALT_TEXT_RUBRIC,
-        # constrained to AltTextJudgment.
-        return AltTextJudgment(
-            meaningful="unknown",
-            reasoning="Vision model not wired up; abstaining.",
+        raw = self.backend.complete_json(
+            system=ALT_TEXT_RUBRIC,
+            user=f"The alt text to judge is: {alt_text!r}",
+            images=[image_path],
+        )
+        return _parse_or_abstain(
+            raw,
+            AltTextJudgment,
+            lambda: AltTextJudgment(
+                meaningful="unknown",
+                reasoning="Vision backend unavailable or output invalid; abstaining.",
+            ),
         )
 
     def evaluate_focus_visible(self, before_img: str, after_img: str) -> FocusVisibleJudgment:
-        # TODO(Track A): mlx-vlm call, system prompt = FOCUS_VISIBLE_RUBRIC,
-        # constrained to FocusVisibleJudgment.
-        return FocusVisibleJudgment(
-            focus_visible="unknown",
-            reasoning="Vision model not wired up; abstaining.",
+        raw = self.backend.complete_json(
+            system=FOCUS_VISIBLE_RUBRIC,
+            user="Image 1 is `before` (unfocused); image 2 is `after` (focused).",
+            images=[before_img, after_img],
+        )
+        return _parse_or_abstain(
+            raw,
+            FocusVisibleJudgment,
+            lambda: FocusVisibleJudgment(
+                focus_visible="unknown",
+                reasoning="Vision backend unavailable or output invalid; abstaining.",
+            ),
         )
 
     def localise_contrast_regions(
         self, image_path: str, selector: str
     ) -> ContrastRegionLocalisation:
-        # TODO(Track A): mlx-vlm call, system prompt =
-        # CONTRAST_LOCALISATION_RUBRIC, constrained to
-        # ContrastRegionLocalisation.
-        return ContrastRegionLocalisation(located="unknown")
+        raw = self.backend.complete_json(
+            system=CONTRAST_LOCALISATION_RUBRIC,
+            user=f"Locate the text and its background in this crop of element {selector!r}.",
+            images=[image_path],
+        )
+        return _parse_or_abstain(
+            raw,
+            ContrastRegionLocalisation,
+            lambda: ContrastRegionLocalisation(located="unknown"),
+        )
+
+
+_ModelT = TypeVar("_ModelT", bound=BaseModel)
+
+
+def _parse_or_abstain(
+    raw: Optional[dict],
+    schema: type[_ModelT],
+    abstain: "Callable[[], _ModelT]",
+) -> _ModelT:
+    """
+    Validate `raw` against `schema`, or return the abstaining answer.
+
+    A missing object (backend down) and an off-schema object (model fabricated
+    or hedged outside the allowed vocabulary) are the same outcome here:
+    `unknown`. The schema is the last line of the fabrication defence, and
+    validation failing is exactly the signal that the model could not answer
+    honestly within it.
+    """
+    if raw is None:
+        return abstain()
+    try:
+        return schema(**raw)
+    except ValidationError:
+        return abstain()
