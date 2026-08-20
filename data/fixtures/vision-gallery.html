@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Vision eval gallery — identifiable images for alt-text judgment</title>
+  <style>
+    body { background:#fff; font-family:sans-serif; margin:0; padding:24px; }
+    .cell { display:inline-block; margin:8px; }
+    svg { display:block; background:#fff; }
+  </style>
+</head>
+<body>
+  <h1>Alt-text eval gallery</h1>
+
+  <!-- Each image has clear, nameable content. Ground truth for "meaningful
+       alt" is unambiguous; placeholder alts (filenames, "image") are
+       ironclad negatives. IDs are the case keys in eval/vision/cases.json. -->
+
+  <span class="cell"><svg id="v-sale" width="180" height="90" xmlns="http://www.w3.org/2000/svg">
+    <rect width="180" height="90" fill="#c0392b"/>
+    <text x="90" y="42" fill="#fff" font-size="30" font-weight="bold" text-anchor="middle" font-family="sans-serif">SALE</text>
+    <text x="90" y="72" fill="#fff" font-size="22" text-anchor="middle" font-family="sans-serif">50% OFF</text>
+  </svg></span>
+
+  <span class="cell"><svg id="v-stop" width="110" height="110" xmlns="http://www.w3.org/2000/svg">
+    <polygon points="33,8 77,8 102,33 102,77 77,102 33,102 8,77 8,33" fill="#c0392b" stroke="#fff" stroke-width="4"/>
+    <text x="55" y="64" fill="#fff" font-size="24" font-weight="bold" text-anchor="middle" font-family="sans-serif">STOP</text>
+  </svg></span>
+
+  <span class="cell"><svg id="v-check" width="100" height="100" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="50" cy="50" r="46" fill="#27ae60"/>
+    <path d="M28,52 L44,68 L74,34" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg></span>
+
+  <span class="cell"><svg id="v-info" width="100" height="100" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="50" cy="50" r="46" fill="#2980b9"/>
+    <circle cx="50" cy="28" r="7" fill="#fff"/>
+    <rect x="43" y="42" width="14" height="38" rx="4" fill="#fff"/>
+  </svg></span>
+
+  <span class="cell"><svg id="v-chart" width="150" height="110" xmlns="http://www.w3.org/2000/svg">
+    <rect width="150" height="110" fill="#fff"/>
+    <rect x="20" y="60" width="28" height="40" fill="#2980b9"/>
+    <rect x="60" y="30" width="28" height="70" fill="#2980b9"/>
+    <rect x="100" y="75" width="28" height="25" fill="#2980b9"/>
+    <line x1="12" y1="100" x2="140" y2="100" stroke="#333" stroke-width="2"/>
+  </svg></span>
+
+  <span class="cell"><svg id="v-warning" width="110" height="100" xmlns="http://www.w3.org/2000/svg">
+    <polygon points="55,10 100,90 10,90" fill="#f39c12" stroke="#fff" stroke-width="3"/>
+    <rect x="50" y="40" width="10" height="30" fill="#fff"/>
+    <circle cx="55" cy="80" r="6" fill="#fff"/>
+  </svg></span>
+
+  <span class="cell"><svg id="v-mail" width="120" height="84" xmlns="http://www.w3.org/2000/svg">
+    <rect x="6" y="12" width="108" height="60" rx="6" fill="#34495e"/>
+    <path d="M6,18 L60,50 L114,18" fill="none" stroke="#fff" stroke-width="4"/>
+  </svg></span>
+
+  <span class="cell"><svg id="v-search" width="100" height="100" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="42" cy="42" r="26" fill="none" stroke="#34495e" stroke-width="9"/>
+    <line x1="62" y1="62" x2="88" y2="88" stroke="#34495e" stroke-width="11" stroke-linecap="round"/>
+  </svg></span>
+
+  <span class="cell"><svg id="v-404" width="160" height="90" xmlns="http://www.w3.org/2000/svg">
+    <rect width="160" height="90" fill="#fff"/>
+    <text x="80" y="62" fill="#c0392b" font-size="48" font-weight="bold" text-anchor="middle" font-family="sans-serif">404</text>
+  </svg></span>
+
+  <span class="cell"><svg id="v-home" width="100" height="90" xmlns="http://www.w3.org/2000/svg">
+    <polygon points="50,12 90,46 78,46 78,82 22,82 22,46 10,46" fill="#2980b9"/>
+    <rect x="42" y="58" width="16" height="24" fill="#fff"/>
+  </svg></span>
+
+  <span class="cell"><svg id="v-download" width="90" height="100" xmlns="http://www.w3.org/2000/svg">
+    <line x1="45" y1="14" x2="45" y2="66" stroke="#27ae60" stroke-width="10" stroke-linecap="round"/>
+    <path d="M22,48 L45,72 L68,48" fill="none" stroke="#27ae60" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="18" y1="88" x2="72" y2="88" stroke="#27ae60" stroke-width="8" stroke-linecap="round"/>
+  </svg></span>
+
+  <span class="cell"><svg id="v-star" width="100" height="96" xmlns="http://www.w3.org/2000/svg">
+    <polygon points="50,8 61,38 94,38 67,58 77,90 50,70 23,90 33,58 6,38 39,38" fill="#f1c40f"/>
+  </svg></span>
+
+</body>
+</html>
