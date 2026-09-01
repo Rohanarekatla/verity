@@ -1,6 +1,7 @@
 # ADR 0001: Polyglot architecture — Python orchestrator, Node worker, JSON-RPC 2.0 over stdio
 
 **Status:** Accepted
+
 *Signed by Rohan Arekatla
 
 ## Context
