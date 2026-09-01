@@ -1,18 +1,19 @@
 /**
  * Method surface.
  *
- * `ping`    — fully implemented since Week 1 day one.
- * `render`  — implemented (A1.2/A1.3): navigates, captures a RenderArtifact,
- *             keeps the page alive for a following runAxe call.
- * `runAxe`  — implemented (A1.4): injects axe-core into the page render
- *             produced and returns its bucketed results.
+ * `ping`            — liveness/handshake (Week 1).
+ * `render`          — navigate, capture a RenderArtifact, keep the page live (A1.2/A1.3).
+ * `runAxe`          — inject axe-core, return its four buckets (A1.4).
+ * `sampleRegion`    — read real pixels behind a text element for contrast (A3.1–A3.4).
+ * `releaseArtifact` — close the live page when done with it.
  */
 
 import { Dispatcher, RpcHandlerError } from "./dispatcher.js";
 import { ErrorCode } from "./protocol.js";
 import { render } from "../crawler/render.js";
 import { runAxeOnPage } from "../static/axe.js";
-import { takePage } from "../crawler/pages.js";
+import { sampleRegion } from "../static/sampling.js";
+import { peekPage, takePage } from "../crawler/pages.js";
 
 const WORKER_VERSION = "0.1.0";
 const PROTOCOL_VERSION = 1;
@@ -69,20 +70,20 @@ export function registerHandlers(dispatcher: Dispatcher): void {
   /**
    * runAxe — run axe-core against the page a prior render() produced.
    *
-   * Consumes the page: it's closed after this call whether it succeeds or
-   * fails, since each artifactId is single-use. Calling runAxe twice on the
-   * same artifactId is a caller error, not a retryable one — re-render if you
-   * need to re-analyze.
+   * Peeks the page rather than consuming it: the same live page is needed
+   * afterwards by sampleRegion, so the pixels sampled for contrast are the
+   * pixels axe judged. The caller releases it with releaseArtifact when done;
+   * shutdown sweeps anything left.
    */
   dispatcher.register(
     "runAxe",
     async (params: unknown) => {
       const artifactId = requireStringParam(params, "artifactId");
-      const live = takePage(artifactId);
+      const live = peekPage(artifactId);
       if (!live) {
         throw new RpcHandlerError(
           ErrorCode.AXE_FAILED,
-          `no live page for artifactId "${artifactId}" (already consumed, or render did not produce it)`,
+          `no live page for artifactId "${artifactId}" (already released, or render did not produce it)`,
           { artifactId },
         );
       }
@@ -94,11 +95,61 @@ export function registerHandlers(dispatcher: Dispatcher): void {
           err instanceof Error ? err.message : String(err),
           { artifactId },
         );
-      } finally {
-        await live.page.close().catch(() => {});
       }
     },
     60_000,
+  );
+
+  /**
+   * sampleRegion — read the real pixels behind a text element (A3.1–A3.4).
+   *
+   * For adjudicating axe's `incomplete` contrast results: returns the
+   * foreground colour and the set of background colours behind the glyphs,
+   * from the rendered pixels. No ratio, no verdict — the model localises, the
+   * maths decides (the WCAG computation lives in Python). Works on the live
+   * page a prior render produced, so the pixels match what axe saw.
+   */
+  dispatcher.register(
+    "sampleRegion",
+    async (params: unknown) => {
+      const artifactId = requireStringParam(params, "artifactId");
+      const selector = requireStringParam(params, "selector");
+      const live = peekPage(artifactId);
+      if (!live) {
+        throw new RpcHandlerError(
+          ErrorCode.INVALID_PARAMS,
+          `no live page for artifactId "${artifactId}" (already released, or render did not produce it)`,
+          { artifactId },
+        );
+      }
+      try {
+        return await sampleRegion(live.page, selector);
+      } catch (err) {
+        throw new RpcHandlerError(
+          ErrorCode.INTERNAL_ERROR,
+          err instanceof Error ? err.message : String(err),
+          { artifactId, selector },
+        );
+      }
+    },
+    30_000,
+  );
+
+  /**
+   * releaseArtifact — close the live page and free its browser resources.
+   *
+   * Idempotent: releasing an unknown or already-released artifact is a no-op,
+   * not an error, so a caller can release defensively in a finally block.
+   */
+  dispatcher.register(
+    "releaseArtifact",
+    async (params: unknown) => {
+      const artifactId = requireStringParam(params, "artifactId");
+      const live = takePage(artifactId);
+      if (live) await live.page.close().catch(() => {});
+      return { released: live !== undefined };
+    },
+    10_000,
   );
 }
 

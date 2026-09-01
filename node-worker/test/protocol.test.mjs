@@ -107,7 +107,10 @@ test("missing jsonrpc field is an invalid request, and the id still comes back",
 test("unknown method returns METHOD_NOT_FOUND and lists what exists", async () => {
   const { frames } = await exchange('{"jsonrpc":"2.0","id":3,"method":"nope"}\n');
   assert.equal(frames[0].error.code, -32601);
-  assert.deepEqual(frames[0].error.data.available.sort(), ["ping", "render", "runAxe"]);
+  assert.deepEqual(
+    frames[0].error.data.available.sort(),
+    ["ping", "releaseArtifact", "render", "runAxe", "sampleRegion"],
+  );
 });
 
 test("runAxe against an unknown artifactId fails cleanly, not a hang", async () => {

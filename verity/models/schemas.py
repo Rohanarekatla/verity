@@ -171,3 +171,33 @@ class AuditReport(BaseModel):
     verity_version: str
     ruleset_version: str
     latency: Optional[Latency] = None
+
+# --- Contrast pixel sampling (A3.1–A3.4) ---
+# Mirror of node-worker/static/sampling.ts::RegionSample. The Node side reads
+# the real pixels behind a text element; this is the shape they cross the RPC
+# boundary in, so the contrast adjudicator (verity/agents/contrast.py) consumes
+# them typed. The model localises, the maths decides — nothing here is a ratio
+# or a verdict.
+
+class Rgb(BaseModel):
+    r: int = Field(ge=0, le=255)
+    g: int = Field(ge=0, le=255)
+    b: int = Field(ge=0, le=255)
+
+
+class BackgroundSample(Rgb):
+    count: int = Field(ge=0)
+
+
+class RegionSample(BaseModel):
+    selector: str
+    foreground: Rgb
+    device_pixel_ratio: float
+    background_samples: list[BackgroundSample] = []
+    text_pixel_count: int = 0
+    background_pixel_count: int = 0
+    sampled: bool
+    # When true the glyph/background split is unreliable (background coloured
+    # near the text was swallowed into the text class). The adjudicator must
+    # keep such a region needs_review, never pass it.
+    ambiguous: bool = False

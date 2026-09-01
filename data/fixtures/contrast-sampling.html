@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Contrast pixel-sampling fixture</title>
+  <style>
+    body { margin: 0; padding: 24px; background: #fff; font-family: sans-serif; }
+    .cell { display: block; margin-bottom: 20px; }
+
+    /* A3.2 acceptance: on a SOLID background the estimated background must
+       match the CSS background exactly. White text on solid #808080. */
+    #solid-grey {
+      color: #ffffff;
+      background: #808080;
+      padding: 16px;
+      width: 320px;
+      font-size: 20px;
+      font-weight: bold;
+    }
+
+    /* Solid, high-contrast control: black text on white. */
+    #solid-white {
+      color: #000000;
+      background: #ffffff;
+      padding: 16px;
+      width: 320px;
+      font-size: 20px;
+    }
+
+    /* The real case: white text over a busy embedded image. axe marks this
+       `incomplete` because static analysis can't know the pixels behind the
+       glyphs. Embedded as a data URI so the fixture is hermetic — no network,
+       no cross-origin taint. The checkerboard has a light square, so
+       worst-case contrast (white text over the light square) is poor. */
+    #over-image {
+      color: #ffffff;
+      padding: 16px;
+      width: 320px;
+      font-size: 20px;
+      font-weight: bold;
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="%23202020"/><rect width="10" height="10" fill="%23e8e8e8"/><rect x="10" y="10" width="10" height="10" fill="%23e8e8e8"/></svg>');
+    }
+  </style>
+</head>
+<body>
+  <div class="cell"><span id="solid-grey">White text on solid grey background</span></div>
+  <div class="cell"><span id="solid-white">Black text on solid white background</span></div>
+  <div class="cell"><span id="over-image">White text over a busy checkerboard image</span></div>
+</body>
+</html>
