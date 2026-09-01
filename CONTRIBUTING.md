@@ -57,6 +57,26 @@ See [`docs/adr/`](docs/adr/) for the design decisions already made
 about this boundary (framing, error codes, why stdio instead of HTTP)
 before proposing an alternative.
 
+## Branch and review flow
+
+**Nothing lands on `main` directly.** Each engineer works on their own
+branch (`Rohan`, `Nikhil`, or a topic branch off it) and opens a pull
+request to `main`. The *other* engineer reviews and merges it — that
+review is the explain-to-approve step in
+[team-plan §2.2](docs/team-plan.md), not a rubber stamp: approving means
+writing three lines describing what the change does, in your own words.
+
+```bash
+git switch Rohan && git pull        # start from current main
+# ... commit your work ...
+git push origin Rohan
+gh pr create --base main --head Rohan   # open the PR for the other to review
+```
+
+After a PR merges, fast-forward your branch back onto `main`
+(`git switch Rohan && git merge --ff-only origin/main`) so the next PR
+starts from a clean base.
+
 ## Commit and PR conventions
 
 - Commit messages: short imperative summary line, blank line, then the
