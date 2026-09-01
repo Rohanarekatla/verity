@@ -110,7 +110,18 @@ def test_mapping_refuses_to_invent_a_criterion():
 # 1 (the finding was produced correctly but flagged waived), silently
 # defeating the gate. This pins the end-to-end behaviour so it can't
 # regress again without a red test.
+#
+# It drives a real scan, so it needs the built Node worker + Chromium.
+# Skipped when the worker isn't built (the Python-only CI job) — the same
+# guard test_sampling.py uses. It runs for real in the contract job, which
+# builds the worker first, and locally after `npm run build`.
 
+import pathlib as _pathlib
+
+_WORKER_JS = _pathlib.Path(__file__).resolve().parents[2] / "node-worker" / "dist" / "rpc" / "server.js"
+
+
+@pytest.mark.skipif(not _WORKER_JS.exists(), reason="node worker not built (cd node-worker && npm run build)")
 @pytest.mark.asyncio
 async def test_week1_gate_fixture_is_authoritative_and_not_waived():
     import pathlib
