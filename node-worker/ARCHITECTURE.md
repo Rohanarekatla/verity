@@ -52,6 +52,7 @@ rather than merely discouraged.
 | [`crawler/render.ts`](crawler/render.ts) | Navigate, settle, capture the artifact | Capturing something new |
 | [`crawler/pages.ts`](crawler/pages.ts) | Holds the live page between render and runAxe | Changing the handoff |
 | [`static/axe.ts`](static/axe.ts) | Inject axe-core, bucket the results | axe options or result shape |
+| [`static/sampling.ts`](static/sampling.ts) | Read real pixels behind text for contrast (A3.1–A3.4) | contrast sampling logic |
 | [`interaction/`](interaction/) | Keyboard vs APG contracts | Week 4 — empty today |
 | [`state_explorer/`](state_explorer/) | Bounded modal / menu states | Week 17 — empty today |
 

@@ -209,14 +209,14 @@ async def scan_url(
     scan_start_time = time.perf_counter()
 
     client = RPCClient(command=node_worker_command, default_timeout=timeout)
+    rpc_call = getattr(client, "call", client.send_request)
+    artifact_id = None
 
     try:
         await client.start()
 
         # Step 1: Request Page Render from Node worker
         logger.info(f"Requesting render for: {url}")
-        # Support both .call() and .send_request() depending on RPCClient method name
-        rpc_call = getattr(client, "call", client.send_request)
         render_start = time.perf_counter()
         render_result = await rpc_call("render", {"url": url})
         render_seconds = time.perf_counter() - render_start
@@ -321,5 +321,14 @@ async def scan_url(
         )
 
     finally:
+        # Release the live page. runAxe no longer closes it (sampleRegion may
+        # need the same pixels), so the orchestrator owns the release. Shutdown
+        # sweeps anything missed, but releasing here keeps a multi-page session
+        # from holding browser tabs open longer than needed. Best-effort.
+        try:
+            if artifact_id:
+                await rpc_call("releaseArtifact", {"artifactId": artifact_id})
+        except Exception:
+            pass
         # Guaranteed process cleanup
         await client.stop()
