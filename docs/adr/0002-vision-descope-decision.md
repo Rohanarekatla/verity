@@ -1,8 +1,8 @@
 # ADR-0002: Spike A — whether Vision stays in scope
 
 **Status:** DRAFT — decision pending the Saturday 22 Aug pair session.
-**Date:** _pending_
-**Signed:** Nikhil ____ / Rohan ____ (both must sign — see team-plan §2.6)
+**Date:** 30/08/2026
+**Signed:** Nikhil ____ / Rohan Arekatla (both must sign — see team-plan §2.6)
 
 > This draft carries the Context section only. The Decision is deliberately
 > blank: it cannot be written until the corpus has been run against a wired
