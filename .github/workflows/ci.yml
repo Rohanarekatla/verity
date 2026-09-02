@@ -43,9 +43,14 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: node-worker/package-lock.json
+      - uses: astral-sh/setup-uv@v3
       - working-directory: node-worker
         run: |
           npm ci
           npx playwright install --with-deps chromium
           npm run build
       - run: python3 node-worker/contract/reference_client.py
+      # With the worker built, the browser integration tests that the
+      # Python-only job skips (the Week 1 gate guard, the sampleRegion
+      # round-trip) actually run here.
+      - run: uv run pytest verity/tests/ -v
