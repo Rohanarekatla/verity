@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Optional, Any
 
-from verity.agents.contrast import flag_needs_review
+from verity.agents.contrast import adjudicate_contrast, flag_needs_review
 from verity.agents.validator import process_findings
 from verity.models.schemas import (
     AuditReport,
@@ -22,6 +22,7 @@ from verity.models.schemas import (
     Severity,
     Provenance,
     Modality,
+    RegionSample,
 )
 from verity.orchestrator.rpc_client import RPCClient
 
@@ -153,6 +154,43 @@ def map_raw_violation_to_finding(raw: dict[str, Any], page_state_hash: str) -> F
     )
 
 
+async def _adjudicate_incomplete_contrast(
+    rpc_call: Any, artifact_id: str, finding: Finding
+) -> Finding:
+    """
+    B3.2 — resolve one axe-`incomplete` contrast node from real pixels.
+
+    Asks the worker to sample the region, then hands the pixels to the
+    deterministic adjudicator. **No model is involved**; the verdict is WCAG
+    arithmetic over colours that were actually rendered.
+
+    Every failure path falls back to `flag_needs_review`, which is the
+    Week 2 behaviour: reported, never gating. A worker too old to implement
+    `sampleRegion`, a selector it cannot re-query, a timeout, a payload that
+    does not validate — none of those are evidence that the contrast is bad,
+    so none of them may produce a finding. Silence here means "we learned
+    nothing", and "we learned nothing" is `cantTell`.
+    """
+    selector = finding.evidence.dom_selector
+    if not selector:
+        return flag_needs_review(finding)
+
+    try:
+        raw_sample = await rpc_call(
+            "sampleRegion", {"artifactId": artifact_id, "selector": selector}
+        )
+        sample = RegionSample.model_validate(raw_sample)
+    except Exception as exc:
+        logger.info(
+            "sampleRegion unavailable for %s (%s); leaving it for review.",
+            selector,
+            exc.__class__.__name__,
+        )
+        return flag_needs_review(finding)
+
+    return adjudicate_contrast(finding, sample)
+
+
 def build_conformance_map(findings: list[Finding]) -> dict[str, str]:
     """
     Collapse findings to one outcome per success criterion, worst-first.
@@ -279,8 +317,11 @@ async def scan_url(
                 non_wcag.append(raw_inc.get("id", "unknown-rule"))
                 continue
             mapped_finding = map_raw_violation_to_finding(raw_inc, page_state_hash=content_hash)
-            # Override the default AUTHORITATIVE provenance to NEEDS_REVIEW
-            findings.append(flag_needs_review(mapped_finding))
+            findings.append(
+                await _adjudicate_incomplete_contrast(
+                    rpc_call, artifact_id, mapped_finding
+                )
+            )
 
         if non_wcag:
             logger.info(

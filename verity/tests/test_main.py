@@ -324,3 +324,119 @@ async def test_report_records_latency():
     )
     # And it must survive serialisation — the gate reads the JSON report.
     assert AuditReport.model_validate_json(report.model_dump_json()).latency == report.latency
+
+
+# --- B3.2: adjudication wired into the pipeline ---
+
+def _worker_with_sample(sample_json: str) -> str:
+    """Mock worker: one incomplete color-contrast node, and a sampleRegion reply."""
+    return (
+        "import sys, json\n"
+        "while True:\n"
+        "    line = sys.stdin.readline()\n"
+        "    if not line: break\n"
+        "    req = json.loads(line)\n"
+        "    m = req.get('method')\n"
+        "    if m == 'render':\n"
+        "        r = {'artifactId': 'a1', 'page_state': {'content_hash': 'abc'}}\n"
+        "    elif m == 'runAxe':\n"
+        "        r = {'violations': [], 'incomplete': ["
+        "            {'id': 'color-contrast', 'tags': ['wcag143'],"
+        "             'help': 'Contrast', 'impact': 'serious', 'selector': '#hero'}"
+        "        ]}\n"
+        "    elif m == 'sampleRegion':\n"
+        f"        r = {sample_json}\n"
+        "    else:\n"
+        "        r = {}\n"
+        "    print(json.dumps({'jsonrpc': '2.0', 'id': req['id'], 'result': r}))\n"
+        "    sys.stdout.flush()\n"
+    )
+
+
+@pytest.mark.asyncio
+async def test_incomplete_contrast_is_adjudicated_to_authoritative():
+    """
+    The Week 3 wedge end to end: axe declined to judge this node, and the
+    pipeline resolves it from real pixels without consulting a model.
+    """
+    sample = (
+        "{'selector': '#hero', 'foreground': {'r': 255, 'g': 255, 'b': 255},"
+        " 'device_pixel_ratio': 2.0,"
+        " 'background_samples': [{'r': 0, 'g': 0, 'b': 0, 'count': 500}],"
+        " 'text_pixel_count': 100, 'background_pixel_count': 500,"
+        " 'sampled': True, 'ambiguous': False}"
+    )
+    report = await scan_url(
+        "https://example.com",
+        node_worker_command=[sys.executable, "-c", _worker_with_sample(sample)],
+        timeout=5.0,
+    )
+
+    assert len(report.findings) == 1
+    finding = report.findings[0]
+    assert finding.provenance is Provenance.AUTHORITATIVE
+    assert finding.outcome == "pass"
+    assert finding.confidence.method == "wcag-contrast-arithmetic"
+    assert finding.evidence.computed_values["contrast_adjudication"]["resolved"] is True
+    assert report.conformance["1.4.3"] == "pass"
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_sample_stays_needs_review_in_the_pipeline():
+    """Text over an image: sampled, but the glyph/background split is unsafe."""
+    sample = (
+        "{'selector': '#hero', 'foreground': {'r': 128, 'g': 128, 'b': 128},"
+        " 'device_pixel_ratio': 2.0,"
+        " 'background_samples': [{'r': 130, 'g': 130, 'b': 130, 'count': 500}],"
+        " 'text_pixel_count': 100, 'background_pixel_count': 500,"
+        " 'sampled': True, 'ambiguous': True}"
+    )
+    report = await scan_url(
+        "https://example.com",
+        node_worker_command=[sys.executable, "-c", _worker_with_sample(sample)],
+        timeout=5.0,
+    )
+
+    finding = report.findings[0]
+    assert finding.provenance is Provenance.NEEDS_REVIEW
+    assert finding.outcome == "cantTell"
+
+
+@pytest.mark.asyncio
+async def test_worker_without_sampleRegion_falls_back_to_needs_review():
+    """
+    An older worker, a timeout, or a selector it cannot re-query is not
+    evidence that the contrast is bad. Failure to learn anything must land on
+    cantTell, never on a finding.
+    """
+    script = (
+        "import sys, json\n"
+        "while True:\n"
+        "    line = sys.stdin.readline()\n"
+        "    if not line: break\n"
+        "    req = json.loads(line)\n"
+        "    m = req.get('method')\n"
+        "    if m == 'render':\n"
+        "        res = {'jsonrpc': '2.0', 'id': req['id'],"
+        "               'result': {'artifactId': 'a1', 'page_state': {'content_hash': 'abc'}}}\n"
+        "    elif m == 'runAxe':\n"
+        "        res = {'jsonrpc': '2.0', 'id': req['id'], 'result': {'violations': [],"
+        "               'incomplete': [{'id': 'color-contrast', 'tags': ['wcag143'],"
+        "               'help': 'Contrast', 'impact': 'serious', 'selector': '#hero'}]}}\n"
+        "    elif m == 'sampleRegion':\n"
+        "        res = {'jsonrpc': '2.0', 'id': req['id'],"
+        "               'error': {'code': -32601, 'message': 'Method not found'}}\n"
+        "    else:\n"
+        "        res = {'jsonrpc': '2.0', 'id': req['id'], 'result': {}}\n"
+        "    print(json.dumps(res)); sys.stdout.flush()\n"
+    )
+    report = await scan_url(
+        "https://example.com",
+        node_worker_command=[sys.executable, "-c", script],
+        timeout=5.0,
+    )
+
+    finding = report.findings[0]
+    assert finding.provenance is Provenance.NEEDS_REVIEW
+    assert finding.outcome == "cantTell"
+    assert finding.confidence.method == "axe-incomplete"
