@@ -37,7 +37,7 @@ from typing import Callable, Optional
 
 from bs4 import BeautifulSoup
 
-from eval.inject import detach_label, reduce_contrast, strip_alt
+from eval.inject import contrast_over_image, detach_label, reduce_contrast, strip_alt
 
 HERE = Path(__file__).resolve().parent
 CACHE_DIR = HERE / ".cache"
@@ -101,6 +101,22 @@ INJECTIONS: list[Injection] = [
         selector="p",
         # Needs visible text: recolouring an empty <p> creates no contrast
         # failure, so it would be labelled as a defect that is not there.
+        targets=lambda soup: [p for p in soup.find_all("p") if p.get_text(strip=True)],
+    ),
+    Injection(
+        name="contrast_over_image",
+        # Text over a background image: axe marks the node `incomplete`
+        # (it cannot read the background), and the deterministic adjudicator
+        # resolves it back to a 1.4.3 verdict. This injector is the labelled
+        # data Week 3's gate is measured against — without it the corpus has
+        # zero cases where axe abstains and we do not.
+        sc_id="1.4.3",
+        acceptable_sc=["1.4.3"],
+        inject=contrast_over_image.inject,
+        selector="p",
+        # Same subject shape as reduce_contrast — a block element with visible
+        # text. Backing an empty <p> with an image introduces no contrast
+        # failure, so it would be a mislabelled case.
         targets=lambda soup: [p for p in soup.find_all("p") if p.get_text(strip=True)],
     ),
 ]
@@ -187,6 +203,9 @@ def verify(clean: str, injected: str, inj: Injection) -> dict:
         "strip_alt": {"alt", "data-verity-original-alt"},
         "detach_label": {"for", "data-verity-original-for"},
         "reduce_contrast": {"style", "data-verity-original-style"},
+        # Its own marker, never `reduce_contrast`'s: both touch `style`, and a
+        # shared marker would let one injector's revert undo the other's.
+        "contrast_over_image": {"style", "data-verity-original-style-coi"},
     }[inj.name]
 
     changed_attrs: set[str] = set()
