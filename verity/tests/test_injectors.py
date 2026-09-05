@@ -1,7 +1,7 @@
 import pytest
 from bs4 import BeautifulSoup
 
-from eval.inject import strip_alt, detach_label, reduce_contrast
+from eval.inject import strip_alt, detach_label, reduce_contrast, contrast_over_image
 
 def test_strip_alt_injector():
     clean_html = '<img src="logo.png" alt="Company Logo" class="header-img">'
@@ -156,4 +156,76 @@ def test_injectors_are_idempotent_under_revert():
     clean = '<p id="t" style="font-size:16px">Hi</p>'
     once = reduce_contrast.inject(clean, "#t")
     twice = reduce_contrast.inject(reduce_contrast.revert(once, "#t"), "#t")
+    assert once == twice
+
+
+# --- B3.4: contrast_over_image ---------------------------------------------
+
+def test_contrast_over_image_injector():
+    clean_html = '<p id="target" style="font-size: 16px;">Hello</p>'
+
+    injected = contrast_over_image.inject(clean_html, selector="#target")
+    soup = BeautifulSoup(injected, 'html.parser')
+    p = soup.find('p')
+    assert "background-image" in p['style'], "A background image must be applied"
+    assert "data:image/png;base64," in p['style'], "Image must be inlined, not fetched"
+    assert "font-size: 16px" in p['style'], "Original style must be preserved"
+    assert p['data-verity-original-style-coi'] == "font-size: 16px;"
+
+    reverted = contrast_over_image.revert(injected, selector="#target")
+    rev_p = BeautifulSoup(reverted, 'html.parser').find('p')
+    assert rev_p['style'] == "font-size: 16px;"
+    assert not rev_p.has_attr('data-verity-original-style-coi')
+
+
+def test_contrast_over_image_on_element_without_style():
+    clean_html = '<p id="target">Hello</p>'
+
+    injected = contrast_over_image.inject(clean_html, selector="#target")
+    p = BeautifulSoup(injected, 'html.parser').find('p')
+    assert p.has_attr('style')
+    assert p['data-verity-original-style-coi'] == "VERITY_NO_STYLE"
+
+    reverted = contrast_over_image.revert(injected, selector="#target")
+    rev_p = BeautifulSoup(reverted, 'html.parser').find('p')
+    assert not rev_p.has_attr('style'), "style must be removed, not left empty"
+    assert not rev_p.has_attr('data-verity-original-style-coi')
+
+
+def test_contrast_over_image_uses_its_own_marker_attribute():
+    """
+    Both this and reduce_contrast write to `style`. If they shared a marker,
+    one injector's revert would silently undo the other's — showing up as a
+    corpus case that quietly lost its defect.
+    """
+    clean = '<p id="t">Hi</p>'
+    coi = contrast_over_image.inject(clean, "#t")
+    # reduce_contrast's revert must not disturb a contrast_over_image case.
+    assert reduce_contrast.revert(coi, "#t") == coi
+
+
+def test_contrast_over_image_touches_only_the_selected_element():
+    clean = (
+        '<p id="target" class="c" data-x="1">Hello</p>'
+        '<p id="other" style="color:#000">Untouched</p>'
+    )
+    before = _attrs_by_tag(clean)
+    after = _attrs_by_tag(contrast_over_image.inject(clean, "#target"))
+
+    assert before.keys() == after.keys()
+    target = next(k for k in before if before[k].get("id") == "target")
+    other = next(k for k in before if before[k].get("id") == "other")
+
+    assert after[other] == before[other], "non-selected element must be untouched"
+    assert set(after[target]) - set(before[target]) == {
+        "style",
+        "data-verity-original-style-coi",
+    }
+    assert after[target]["class"] == before[target]["class"]
+
+
+def test_contrast_over_image_is_idempotent_under_revert():
+    clean = '<p id="t" style="font-size:16px">Hi</p>'
+    once = contrast_over_image.inject(clean, "#t")
+    twice = contrast_over_image.inject(contrast_over_image.revert(once, "#t"), "#t")
     assert once == twice
