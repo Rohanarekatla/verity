@@ -1,7 +1,15 @@
 import pytest
 from bs4 import BeautifulSoup
 
-from eval.inject import strip_alt, detach_label, reduce_contrast, contrast_over_image
+from eval.inject import (
+    strip_alt,
+    detach_label,
+    reduce_contrast,
+    contrast_over_image,
+    keyboard_trap,
+    positive_tabindex,
+    outline_none,
+)
 
 def test_strip_alt_injector():
     clean_html = '<img src="logo.png" alt="Company Logo" class="header-img">'
@@ -229,3 +237,154 @@ def test_contrast_over_image_is_idempotent_under_revert():
     once = contrast_over_image.inject(clean, "#t")
     twice = contrast_over_image.inject(contrast_over_image.revert(once, "#t"), "#t")
     assert once == twice
+
+
+# --- B4.3: keyboard_trap ----------------------------------------------------
+
+def test_keyboard_trap_injector():
+    clean_html = '<button id="target">Go</button>'
+
+    injected = keyboard_trap.inject(clean_html, selector="#target")
+    btn = BeautifulSoup(injected, 'html.parser').find('button')
+    assert "Tab" in btn['onkeydown'], "Tab must be intercepted"
+    assert "preventDefault" in btn['onkeydown']
+    assert btn['data-verity-original-onkeydown-trap'] == "VERITY_NO_ONKEYDOWN"
+
+    reverted = keyboard_trap.revert(injected, selector="#target")
+    rev = BeautifulSoup(reverted, 'html.parser').find('button')
+    assert not rev.has_attr('onkeydown')
+    assert not rev.has_attr('data-verity-original-onkeydown-trap')
+
+
+def test_keyboard_trap_makes_a_non_focusable_element_focusable_then_undoes_it():
+    """An element that cannot receive focus cannot be trapped."""
+    clean_html = '<div id="target">Panel</div>'
+
+    injected = keyboard_trap.inject(clean_html, selector="#target")
+    div = BeautifulSoup(injected, 'html.parser').find('div')
+    assert div['tabindex'] == "0"
+
+    reverted = keyboard_trap.revert(injected, selector="#target")
+    rev = BeautifulSoup(reverted, 'html.parser').find('div')
+    assert not rev.has_attr('tabindex'), "added tabindex must be removed again"
+    assert not rev.has_attr('data-verity-added-tabindex-trap')
+
+
+def test_keyboard_trap_preserves_an_existing_handler_and_tabindex():
+    clean_html = '<button id="t" onkeydown="log()" tabindex="0">Go</button>'
+
+    injected = keyboard_trap.inject(clean_html, selector="#t")
+    btn = BeautifulSoup(injected, 'html.parser').find('button')
+    assert "log()" in btn['onkeydown']
+
+    reverted = keyboard_trap.revert(injected, selector="#t")
+    rev = BeautifulSoup(reverted, 'html.parser').find('button')
+    assert rev['onkeydown'] == "log()"
+    assert rev['tabindex'] == "0", "a pre-existing tabindex must survive"
+
+
+def test_keyboard_trap_is_idempotent_under_revert():
+    clean = '<button id="t">Go</button>'
+    once = keyboard_trap.inject(clean, "#t")
+    twice = keyboard_trap.inject(keyboard_trap.revert(once, "#t"), "#t")
+    assert once == twice
+
+
+# --- B4.3: positive_tabindex ------------------------------------------------
+
+def test_positive_tabindex_injector():
+    clean_html = '<a id="target" href="#">Link</a>'
+
+    injected = positive_tabindex.inject(clean_html, selector="#target")
+    a = BeautifulSoup(injected, 'html.parser').find('a')
+    assert int(a['tabindex']) > 0, "must be positive to disrupt document order"
+    assert a['data-verity-original-tabindex-pos'] == "VERITY_NO_TABINDEX"
+
+    reverted = positive_tabindex.revert(injected, selector="#target")
+    rev = BeautifulSoup(reverted, 'html.parser').find('a')
+    assert not rev.has_attr('tabindex')
+    assert not rev.has_attr('data-verity-original-tabindex-pos')
+
+
+def test_positive_tabindex_restores_an_existing_value():
+    clean_html = '<a id="t" href="#" tabindex="-1">Link</a>'
+
+    injected = positive_tabindex.inject(clean_html, selector="#t")
+    assert int(BeautifulSoup(injected, 'html.parser').find('a')['tabindex']) > 0
+
+    reverted = positive_tabindex.revert(injected, selector="#t")
+    assert BeautifulSoup(reverted, 'html.parser').find('a')['tabindex'] == "-1"
+
+
+def test_positive_tabindex_is_idempotent_under_revert():
+    clean = '<a id="t" href="#">Link</a>'
+    once = positive_tabindex.inject(clean, "#t")
+    twice = positive_tabindex.inject(positive_tabindex.revert(once, "#t"), "#t")
+    assert once == twice
+
+
+# --- B4.3: outline_none -----------------------------------------------------
+
+def test_outline_none_injector():
+    clean_html = '<button id="target" style="color: blue;">Go</button>'
+
+    injected = outline_none.inject(clean_html, selector="#target")
+    btn = BeautifulSoup(injected, 'html.parser').find('button')
+    assert "outline: none" in btn['style']
+    assert "box-shadow: none" in btn['style'], "focus rings are often box-shadows"
+    assert "color: blue" in btn['style'], "original style must be preserved"
+    assert btn['data-verity-original-style-outline'] == "color: blue;"
+
+    reverted = outline_none.revert(injected, selector="#target")
+    rev = BeautifulSoup(reverted, 'html.parser').find('button')
+    assert rev['style'] == "color: blue;"
+    assert not rev.has_attr('data-verity-original-style-outline')
+
+
+def test_outline_none_adds_no_replacement_indicator():
+    """
+    Removing the outline is only a failure when nothing replaces it. This
+    injector must not accidentally draw a ring of its own, or the case stops
+    testing SC 2.4.7.
+    """
+    injected = outline_none.inject('<button id="t">Go</button>', "#t")
+    style = BeautifulSoup(injected, 'html.parser').find('button')['style']
+    assert "outline: none" in style
+    assert "outline:" not in style.replace("outline: none", "")
+    assert "border" not in style
+
+
+def test_outline_none_is_idempotent_under_revert():
+    clean = '<button id="t" style="color:red">Go</button>'
+    once = outline_none.inject(clean, "#t")
+    twice = outline_none.inject(outline_none.revert(once, "#t"), "#t")
+    assert once == twice
+
+
+# --- markers must not collide ----------------------------------------------
+
+def test_style_writing_injectors_use_distinct_markers():
+    """
+    reduce_contrast, contrast_over_image and outline_none all write to
+    `style`. A shared marker would let one injector's revert silently undo
+    another's, producing a corpus case that quietly lost its defect.
+    """
+    clean = '<p id="t">Hi</p>'
+    cases = {
+        "reduce_contrast": reduce_contrast.inject(clean, "#t"),
+        "contrast_over_image": contrast_over_image.inject(clean, "#t"),
+        "outline_none": outline_none.inject(clean, "#t"),
+    }
+    modules = {
+        "reduce_contrast": reduce_contrast,
+        "contrast_over_image": contrast_over_image,
+        "outline_none": outline_none,
+    }
+
+    for owner, injected in cases.items():
+        for other_name, other in modules.items():
+            if other_name == owner:
+                continue
+            assert other.revert(injected, "#t") == injected, (
+                f"{other_name}.revert must not disturb a {owner} case"
+            )
