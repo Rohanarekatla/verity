@@ -62,6 +62,41 @@
       "title": "AuditReport",
       "type": "object"
     },
+    "BackgroundSample": {
+      "properties": {
+        "r": {
+          "maximum": 255,
+          "minimum": 0,
+          "title": "R",
+          "type": "integer"
+        },
+        "g": {
+          "maximum": 255,
+          "minimum": 0,
+          "title": "G",
+          "type": "integer"
+        },
+        "b": {
+          "maximum": 255,
+          "minimum": 0,
+          "title": "B",
+          "type": "integer"
+        },
+        "count": {
+          "minimum": 0,
+          "title": "Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "r",
+        "g",
+        "b",
+        "count"
+      ],
+      "title": "BackgroundSample",
+      "type": "object"
+    },
     "BoundingBox": {
       "description": "A rectangle on the rendered page.\n\nFloats, not ints: `getBoundingClientRect()` returns subpixel values, and\nmultiplying a CSS box by a fractional device-pixel ratio produces more of\nthem. Rounding at the boundary would silently move every box by up to a\npixel before the contrast math (Week 3) ever samples it.\n\nThe coordinate system is *not* implied by this type \u2014 whoever holds a box\nmust say which space it is in. See `ElementCapture`.",
       "properties": {
@@ -428,6 +463,56 @@
       "title": "Provenance",
       "type": "string"
     },
+    "RegionSample": {
+      "properties": {
+        "selector": {
+          "title": "Selector",
+          "type": "string"
+        },
+        "foreground": {
+          "$ref": "#/$defs/Rgb"
+        },
+        "device_pixel_ratio": {
+          "title": "Device Pixel Ratio",
+          "type": "number"
+        },
+        "background_samples": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/BackgroundSample"
+          },
+          "title": "Background Samples",
+          "type": "array"
+        },
+        "text_pixel_count": {
+          "default": 0,
+          "title": "Text Pixel Count",
+          "type": "integer"
+        },
+        "background_pixel_count": {
+          "default": 0,
+          "title": "Background Pixel Count",
+          "type": "integer"
+        },
+        "sampled": {
+          "title": "Sampled",
+          "type": "boolean"
+        },
+        "ambiguous": {
+          "default": false,
+          "title": "Ambiguous",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "selector",
+        "foreground",
+        "device_pixel_ratio",
+        "sampled"
+      ],
+      "title": "RegionSample",
+      "type": "object"
+    },
     "RenderArtifact": {
       "description": "Paths to assets captured by Developer A's browser worker.",
       "properties": {
@@ -472,6 +557,35 @@
         "network_log_path"
       ],
       "title": "RenderArtifact",
+      "type": "object"
+    },
+    "Rgb": {
+      "properties": {
+        "r": {
+          "maximum": 255,
+          "minimum": 0,
+          "title": "R",
+          "type": "integer"
+        },
+        "g": {
+          "maximum": 255,
+          "minimum": 0,
+          "title": "G",
+          "type": "integer"
+        },
+        "b": {
+          "maximum": 255,
+          "minimum": 0,
+          "title": "B",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "r",
+        "g",
+        "b"
+      ],
+      "title": "Rgb",
       "type": "object"
     },
     "Severity": {
@@ -530,6 +644,225 @@
         "modality"
       ],
       "title": "SuccessCriterion",
+      "type": "object"
+    },
+    "TabStop": {
+      "description": "One resting place of keyboard focus, in the order it was observed.",
+      "properties": {
+        "order": {
+          "description": "Position in the observed tab order.",
+          "minimum": 0,
+          "title": "Order",
+          "type": "integer"
+        },
+        "selector": {
+          "title": "Selector",
+          "type": "string"
+        },
+        "cycle": {
+          "description": "Which full traversal cycle this stop belongs to.",
+          "minimum": 0,
+          "title": "Cycle",
+          "type": "integer"
+        },
+        "bbox": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoundingBox"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "accessible_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Accessible Name"
+        },
+        "tabindex": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tabindex"
+        },
+        "focus_visible": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Focus Visible"
+        },
+        "dom_order": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Position of this element in document order, for comparison with `order`.",
+          "title": "Dom Order"
+        }
+      },
+      "required": [
+        "order",
+        "selector",
+        "cycle"
+      ],
+      "title": "TabStop",
+      "type": "object"
+    },
+    "TraversalResult": {
+      "description": "The outcome of pressing Tab repeatedly on one page state.\n\n`complete` is the honesty flag. A traversal that timed out, hit an\nunhandled shadow root, or lost focus to the browser chrome did not\nobserve the page \u2014 it observed part of it. Interpreting a partial\ntraversal as though it were whole is how a keyboard checker invents\nfailures, so B4.2 turns `complete=False` into `indeterminate`.",
+      "properties": {
+        "stops": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TabStop"
+          },
+          "title": "Stops",
+          "type": "array"
+        },
+        "cycles_requested": {
+          "minimum": 1,
+          "title": "Cycles Requested",
+          "type": "integer"
+        },
+        "cycles_completed": {
+          "minimum": 0,
+          "title": "Cycles Completed",
+          "type": "integer"
+        },
+        "returned_to_origin": {
+          "default": false,
+          "title": "Returned To Origin",
+          "type": "boolean"
+        },
+        "trap_detected": {
+          "default": false,
+          "title": "Trap Detected",
+          "type": "boolean"
+        },
+        "trap_selector": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trap Selector"
+        },
+        "unreached": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/UnreachedRegion"
+          },
+          "title": "Unreached",
+          "type": "array"
+        },
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "incomplete_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Incomplete Reason"
+        }
+      },
+      "required": [
+        "cycles_requested",
+        "cycles_completed",
+        "complete"
+      ],
+      "title": "TraversalResult",
+      "type": "object"
+    },
+    "UnreachedReason": {
+      "description": "Why the traversal never landed on something it expected to.\n\nThree different kinds of thing live here, and conflating them is how a\nkeyboard checker cries wolf:\n\n- a real barrier (`NOT_FOCUSABLE`, `OBSCURED`) \u2014 the user cannot get there\n- our own blind spot (`SHADOW_DOM`, `IFRAME`, `UNKNOWN`) \u2014 we did not look\n- correct authoring (`ARROW_NAVIGABLE`) \u2014 reachable, by a different key",
+      "enum": [
+        "shadow-dom",
+        "iframe",
+        "not-focusable",
+        "obscured",
+        "arrow-navigable",
+        "unknown"
+      ],
+      "title": "UnreachedReason",
+      "type": "string"
+    },
+    "UnreachedRegion": {
+      "description": "Something focusable that the traversal could not get to, and why.",
+      "properties": {
+        "selector": {
+          "title": "Selector",
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/UnreachedReason"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        }
+      },
+      "required": [
+        "selector",
+        "reason"
+      ],
+      "title": "UnreachedRegion",
       "type": "object"
     }
   }
