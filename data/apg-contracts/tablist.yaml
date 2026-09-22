@@ -1,0 +1,201 @@
+# APG contract — Tabs (tablist / tab / tabpanel)
+#
+# Week 4 required artifact, Track B half. Written by hand from the WAI-ARIA
+# Authoring Practices tabs pattern and the ARIA 1.2 role definitions, before
+# any runner code, per the execution plan.
+#
+# Engineer A writes an independent version; we compare at the pair session.
+# Where they differ is the useful part — a divergence here means we do not
+# agree on what "correct" looks like, and a checker built on the wrong idea of
+# correct is worse than no checker.
+#
+# ---------------------------------------------------------------------------
+# The point of this file
+#
+# Week 4's gate is "injected trap detected, ZERO false alarms on clean APG
+# widgets". A correctly built tablist is the hard case, not the broken one:
+# six tabs expose exactly ONE tab stop, because the pattern uses roving
+# tabindex and arrow keys. A naive keyboard checker sees five unreachable
+# controls and screams.
+#
+# So this contract exists to say, precisely and in advance, what a correct
+# tablist looks like — including the parts that look wrong to a checker that
+# only knows about Tab.
+#
+# ---------------------------------------------------------------------------
+# Assertion vocabulary
+#
+#   severity: violation   this is definitely broken (may gate a build)
+#   severity: warning     suspicious, but legitimate variants exist
+#                         -> outcome cantTell / NEEDS_REVIEW, never gates
+#
+# Anything we cannot check without human judgement is listed under
+# `not_asserted` at the bottom, explicitly, rather than silently omitted.
+
+contract: tablist
+version: 1
+source:
+  - "WAI-ARIA Authoring Practices Guide — Tabs pattern"
+  - "ARIA 1.2 — roles: tablist, tab, tabpanel"
+wcag:
+  - "2.1.1"   # Keyboard
+  - "2.4.3"   # Focus Order
+  - "4.1.2"   # Name, Role, Value
+
+# Which elements this contract applies to.
+match:
+  role: tablist
+
+# ---------------------------------------------------------------------------
+# Structure
+# ---------------------------------------------------------------------------
+structure:
+  - id: tablist-owns-tabs
+    severity: violation
+    assert: "every child element with role=tab is owned by the tablist"
+    note: >
+      Ownership may be by DOM containment or by aria-owns. A checker that only
+      looks at DOM children will report a false violation on a tablist that
+      uses aria-owns, which is valid.
+
+  - id: tablist-has-at-least-one-tab
+    severity: violation
+    assert: "tablist owns >= 1 element with role=tab"
+
+  - id: tab-controls-a-panel
+    severity: violation
+    assert: "every role=tab has aria-controls referencing an existing element"
+    note: >
+      The referenced element must exist in the accessible tree. A dangling
+      aria-controls is a broken relationship, not a missing one.
+
+  - id: controlled-element-is-a-tabpanel
+    severity: violation
+    assert: "the element referenced by aria-controls has role=tabpanel"
+
+  - id: tabpanel-is-labelled-by-its-tab
+    severity: warning
+    assert: "every role=tabpanel has aria-labelledby referencing its controlling tab"
+    note: >
+      A warning, not a violation. A tabpanel labelled by aria-label instead is
+      unusual but not incorrect, and asserting this as a violation would fire
+      on a legitimate variant.
+
+  - id: tab-has-accessible-name
+    severity: violation
+    assert: "every role=tab has a non-empty accessible name"
+
+  - id: exactly-one-tab-selected
+    severity: violation
+    assert: "exactly one owned role=tab has aria-selected=true"
+    note: >
+      Zero selected tabs is a real failure; the user cannot tell which panel
+      they are looking at. Two or more is also a failure. Note that
+      aria-selected is REQUIRED on every tab — an absent attribute is not
+      "false by default" for this purpose, it is an authoring error.
+
+  - id: non-selected-panels-hidden
+    severity: warning
+    assert: >
+      tabpanels whose controlling tab has aria-selected=false are hidden
+      (display:none, hidden attribute, or aria-hidden=true)
+    note: >
+      Warning only. Some implementations keep all panels in the DOM and
+      visually stack them; others animate between them, so a panel may be
+      briefly visible mid-transition. Asserting this as a violation would
+      produce false alarms on correct widgets during animation.
+
+# ---------------------------------------------------------------------------
+# Keyboard — the part that matters most for Week 4
+# ---------------------------------------------------------------------------
+keyboard:
+  # THIS IS THE ONE THAT PREVENTS THE FALSE ALARM.
+  - id: roving-tabindex
+    severity: violation
+    assert: >
+      exactly one owned role=tab is in the Tab sequence (tabindex=0);
+      all other owned tabs have tabindex=-1
+    note: >
+      This is the crux. A tablist with six tabs SHOULD expose one tab stop.
+      The other five are reached with arrow keys, not Tab.
+
+      Therefore: our SC 2.1.1 check must NOT report the five tabindex=-1 tabs
+      as unreachable. They are reachable — by a different key. A traversal
+      that only presses Tab has not proven they are unreachable, it has
+      proven it did not press the right key.
+
+      Track A's tab-order capture must mark elements inside a role=tablist as
+      arrow-navigable rather than adding them to `unreached`.
+
+  - id: arrow-keys-move-between-tabs
+    severity: violation
+    assert: >
+      when aria-orientation is horizontal or absent: ArrowLeft/ArrowRight move
+      focus between owned tabs;
+      when aria-orientation=vertical: ArrowUp/ArrowDown do
+    note: >
+      Orientation defaults to horizontal when the attribute is absent. A
+      checker that assumes vertical will report a correct horizontal tablist
+      as broken.
+
+  - id: arrow-wrapping-is-optional
+    severity: warning
+    assert: "arrow keys at the first/last tab either wrap or stop"
+    note: >
+      The APG permits both. Explicitly recorded as optional so nobody later
+      "fixes" the checker by asserting one of them.
+
+  - id: home-end-keys
+    severity: warning
+    assert: "Home moves to the first tab, End to the last"
+    note: Recommended by the APG, not required for conformance.
+
+  - id: tab-moves-out-of-the-tablist
+    severity: violation
+    assert: >
+      pressing Tab from the selected tab moves focus OUT of the tablist —
+      to the active tabpanel if it is focusable, otherwise to the next
+      element in document order
+    note: >
+      This is the SC 2.1.2 check for this pattern. If Tab from the selected
+      tab lands back inside the tablist, focus is trapped.
+
+  - id: no-positive-tabindex
+    severity: violation
+    assert: "no element within the tablist has a positive tabindex"
+    wcag: "2.4.3"
+
+  - id: focus-visible-on-tabs
+    severity: violation
+    assert: "the focused tab has a visible focus indicator"
+    wcag: "2.4.7"
+    note: >
+      Measured visually (A4.3 screenshot diff), not from CSS. A widget that
+      sets outline:none and draws its own ring is conformant, and a CSS-only
+      check would report it as a failure.
+
+# ---------------------------------------------------------------------------
+# Deliberately NOT asserted
+#
+# Recorded so that a future version does not quietly add them and start
+# producing false alarms. Every line here is a judgment a machine cannot make.
+# ---------------------------------------------------------------------------
+not_asserted:
+  - "whether the tab labels are meaningful"
+  - "whether the tab order matches the visual left-to-right order — CSS may
+     legitimately reorder, and `order`/`flex-direction: row-reverse` are valid"
+  - "whether activation is automatic (on focus) or manual (on Enter/Space);
+     the APG permits both, and the choice depends on how expensive the panel
+     content is to load"
+  - "whether the panel content is correct for the selected tab"
+  - "nested tablists — out of scope for version 1 of this contract"
+
+# ---------------------------------------------------------------------------
+# Reference implementations to validate against at the pair session.
+# Every one of these must produce ZERO findings. Any that does not is a bug
+# in our checker, not in the widget.
+# ---------------------------------------------------------------------------
+reference_implementations:
+  - "APG tabs example, automatic activation"
+  - "APG tabs example, manual activation"
+  - "APG tabs example, vertical orientation"
