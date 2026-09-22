@@ -1,6 +1,6 @@
 # ADR-0003: The model localises, the math decides
 
-**Status:** DRAFT — context written by B, decision to be agreed and signed jointly.
+**Status:** PROPOSED — decision drafted by B, awaiting Rohan's agreement and both signatures.
 **Date:** _pending_
 **Signed:** Nikhil ____ / Rohan ____ (both must sign — see team-plan §2.6)
 **Week:** 3 (31 Aug – 6 Sep)
@@ -74,40 +74,60 @@ change (add `fontSize`/`fontWeight`), not a change to this principle.
 
 ## Decision
 
-> _To agree jointly. Proposed wording:_
->
-> **A model may never produce a value that determines a verdict.** Models may
-> localise, classify, and abstain. Numbers that decide conformance come from
-> deterministic computation over measured inputs.
->
-> Concretely: no schema handed to a model may contain a ratio, a threshold, a
-> score, or a pass/fail field. Where a model's output feeds a calculation, the
-> calculation is performed in Python over values the browser reported.
+**A model may never produce a value that determines a verdict.**
+
+Models may localise, classify, and abstain. Every number that decides
+conformance comes from deterministic computation over measured inputs.
+
+Three rules follow, and they are testable:
+
+1. **No schema handed to a model may contain a ratio, a threshold, a score,
+   or a pass/fail field.** Not "should not populate" — the field does not
+   exist, so a model that wanted to fabricate one has nowhere to put it.
+2. **Where a model's output feeds a calculation, the calculation runs in
+   Python over values the browser reported.** The model may supply
+   coordinates; it may not supply the colours found at those coordinates.
+3. **A finding whose verdict depended on a model may not be
+   `AUTHORITATIVE`.** It is `AI_ASSISTED` at best, and `cli.py` never gates a
+   build on it.
+
+> _Rohan — this is B's proposed wording, not an agreed decision. Change it,
+> narrow it, or argue with it; it is not ready until we both sign._
 
 ---
 
 ## Consequences
 
-> _To write jointly. Starting points:_
->
-> - Vision work is bounded in advance: every future judgment must be
->   expressible as "point at it" or "classify it", never "measure it".
-> - Deterministic paths may gate a build; model-assisted ones may not. This
->   is already enforced in `cli.py`, which exits non-zero only on
->   `AUTHORITATIVE` findings.
-> - Adding a measurement means adding it to the *worker*, not the model —
->   as `sampleRegion` did for contrast.
+- **Vision work is bounded in advance.** Every future judgment must be
+  expressible as "point at it" or "classify it", never "measure it". If a
+  capability cannot be phrased that way, it is a worker feature, not a model
+  feature.
+- **Adding a measurement means adding it to the worker.** `sampleRegion`
+  (A3.4) is the template: the browser already knows the answer, so ask it
+  rather than asking a model to estimate.
+- **Some recall is permanently given up.** The 3.0–4.5 contrast band stays
+  `cantTell` rather than being resolved by a model guessing at font size.
+  This is the cost of the rule and we are accepting it knowingly.
+- **`test_contrast_localisation_never_carries_a_ratio` enforces rule 1** and
+  should be copied for any future model schema.
 
 ---
 
 ## Alternatives rejected
 
-> _To write jointly._
->
-> - **Let the model report the ratio and validate it afterwards.** Rejected:
->   there is nothing to validate against without measuring the pixels, at
->   which point the model's number is redundant.
-> - **Use the model's bounding box, then sample inside it.** Not rejected —
->   deferred. This is the intended path for cases where the DOM gives no
->   usable selector. It still obeys the principle, because the model supplies
->   coordinates and the maths supplies the verdict.
+- **Let the model report the ratio, then validate it.** Rejected: there is
+  nothing to validate against without measuring the pixels — and once you
+  have measured them, the model's number is redundant. Validation here is
+  indistinguishable from doing the work twice.
+- **Let the model report the ratio with a confidence score, and gate on
+  confidence.** Rejected: a fabricated ratio arrives with a confident score
+  attached. Spike A's measured result — the model abstaining on 79% of cases
+  rather than guessing — is what a *well-behaved* small model looks like;
+  we should not build a mechanism that only works if every model behaves
+  that well.
+- **Use the model's bounding box, then sample inside it.** *Not rejected —
+  deferred.* This is the intended path where the DOM offers no usable
+  selector, and it obeys the rule: the model supplies coordinates, the maths
+  supplies the verdict. Needs its own ADR when it lands, because "a wrong box
+  points the sampler at the wrong pixels" is a failure mode this ADR does not
+  cover.

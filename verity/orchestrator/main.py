@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional, Any
 
 from verity.agents.contrast import adjudicate_contrast, flag_needs_review
-from verity.agents.validator import process_findings
+from verity.agents.validator import assign_severity, explain_severity, process_findings
 from verity.models.schemas import (
     AuditReport,
     Finding,
@@ -129,12 +129,24 @@ def map_raw_violation_to_finding(raw: dict[str, Any], page_state_hash: str) -> F
         method="deterministic",
     )
 
-    raw_impact = str(raw.get("impact", "moderate")).lower()
-    try:
-        severity = Severity(raw_impact)
-    except ValueError:
-        logger.warning(f"Unknown severity impact '{raw_impact}' for rule '{rule_id}'. Defaulting to MODERATE.")
-        severity = Severity.MODERATE
+    # B6.3 — severity is a policy decision, not a passthrough. axe's `impact`
+    # rates the *rule*; assign_severity weighs it against the criterion, the
+    # conformance level, and how certain we actually are.
+    raw_impact = str(raw.get("impact", "")).lower() or None
+    severity = assign_severity(
+        sc_id=sc_id,
+        level=success_criterion.level,
+        outcome="fail",
+        provenance=Provenance.AUTHORITATIVE,
+        engine_impact=raw_impact,
+    )
+    computed_details["severity_basis"] = explain_severity(
+        sc_id=sc_id,
+        level=success_criterion.level,
+        outcome="fail",
+        provenance=Provenance.AUTHORITATIVE,
+        engine_impact=raw_impact,
+    )["basis"]
 
     selector_str = str(raw.get("selector", ""))
 
