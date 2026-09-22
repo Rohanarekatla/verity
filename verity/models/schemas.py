@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import Optional, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # 1. ENUMS (Allowed Choices)
 class Level(str, Enum):
@@ -86,6 +86,13 @@ class Finding(BaseModel):
     the rule and the selector. They are separate fields because the dedup
     signature needs the rule, and recovering it by string-surgery on `id`
     couples dedup to whatever format `id` happens to use this week.
+
+    **B6.2 — provenance is enforced here, at construction time.** It is a
+    required field with no default, and `_provenance_is_coherent` below
+    rejects combinations that contradict themselves. Provenance is not a
+    reporting concern that gets filled in later; it is the thing that decides
+    whether a finding may fail someone's build, so an incoherent one must be
+    unconstructable rather than merely discouraged.
     """
     id: str
     rule_id: str
@@ -101,6 +108,85 @@ class Finding(BaseModel):
     evidence: Evidence
     page_state_hash: str
     waived: bool = False
+
+    @model_validator(mode="after")
+    def _provenance_is_coherent(self) -> "Finding":
+        """
+        Reject findings whose provenance contradicts their own evidence.
+
+        Three rules, each one a bug we have actually shipped or nearly shipped:
+
+        1. **AUTHORITATIVE means decided.** It may not carry `cantTell` —
+           "this is certain" and "I could not tell" cannot both be true. The
+           Week 2 report contained exactly this pair.
+        2. **AUTHORITATIVE means certain, and unaided.** Confidence must be
+           1.0, and no model may be named. A deterministic verdict that
+           admits doubt is not deterministic, and one a model helped produce
+           is `AI_ASSISTED` by definition.
+        3. **NEEDS_REVIEW means undecided.** Outcome must be `cantTell`, and
+           confidence must be below 1.0. Shipping a `needs review` finding
+           claiming full confidence is the contradiction `flag_needs_review`
+           was written to fix — this makes it impossible rather than
+           merely fixed in one place.
+
+        `AI_ASSISTED` must name the model that produced it, so a reader can
+        tell which model to blame and which findings to re-run when it
+        changes.
+
+        Note this runs at *construction*, not on assignment: the pipeline
+        legitimately builds an authoritative finding and then downgrades it
+        (`flag_needs_review`, `adjudicate_contrast`), which passes through an
+        intermediate state that is briefly incoherent. Use `revalidate()`
+        after such a mutation.
+        """
+        if self.provenance is Provenance.AUTHORITATIVE:
+            if self.outcome == "cantTell":
+                raise ValueError(
+                    "AUTHORITATIVE findings must be decided: outcome 'cantTell' "
+                    "contradicts an authoritative provenance"
+                )
+            if self.confidence.score != 1.0:
+                raise ValueError(
+                    f"AUTHORITATIVE findings must carry confidence 1.0, "
+                    f"got {self.confidence.score}"
+                )
+            if self.confidence.model is not None:
+                raise ValueError(
+                    f"AUTHORITATIVE findings are produced without a model, but "
+                    f"confidence.model is {self.confidence.model!r}; this is "
+                    "AI_ASSISTED"
+                )
+
+        elif self.provenance is Provenance.NEEDS_REVIEW:
+            if self.outcome != "cantTell":
+                raise ValueError(
+                    f"NEEDS_REVIEW findings must have outcome 'cantTell', "
+                    f"got {self.outcome!r}"
+                )
+            if self.confidence.score >= 1.0:
+                raise ValueError(
+                    "NEEDS_REVIEW findings may not claim full confidence"
+                )
+
+        elif self.provenance is Provenance.AI_ASSISTED:
+            if self.confidence.model is None:
+                raise ValueError(
+                    "AI_ASSISTED findings must name the model in "
+                    "confidence.model"
+                )
+
+        return self
+
+    def revalidate(self) -> "Finding":
+        """
+        Re-run the coherence check after in-place mutation.
+
+        The construction-time validator does not fire on assignment, by
+        design — downgrading a finding is a two-step mutation that is
+        momentarily inconsistent. Call this once the mutation is complete.
+        Raises the same `ValidationError` a bad constructor call would.
+        """
+        return Finding.model_validate(self.model_dump())
 
 
 class PageState(BaseModel):
