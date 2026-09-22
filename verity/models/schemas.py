@@ -201,3 +201,92 @@ class RegionSample(BaseModel):
     # near the text was swallowed into the text class). The adjudicator must
     # keep such a region needs_review, never pass it.
     ambiguous: bool = False
+
+
+# --- Keyboard traversal (A4.1–A4.2 produce it, B4.1–B4.4 interpret it) ---
+#
+# PROPOSED CONTRACT — Track A has not built the traversal yet. This is written
+# here first, deliberately: in Week 2 the `element_screenshots` shape was
+# defined on the TS side and bolted into Python afterwards, the two drifted,
+# and nothing caught it because no Python code validated a render payload.
+# Defining it here gives Track A a target and gives Track B something to write
+# real logic against today.
+#
+# Nothing in these models is a verdict. They describe *what happened when we
+# pressed Tab* — the mapping to success criteria lives in agents/keyboard.py,
+# on the Python side, where it can be unit-tested without a browser.
+
+class UnreachedReason(str, Enum):
+    """
+    Why the traversal never landed on something it expected to.
+
+    Three different kinds of thing live here, and conflating them is how a
+    keyboard checker cries wolf:
+
+    - a real barrier (`NOT_FOCUSABLE`, `OBSCURED`) — the user cannot get there
+    - our own blind spot (`SHADOW_DOM`, `IFRAME`, `UNKNOWN`) — we did not look
+    - correct authoring (`ARROW_NAVIGABLE`) — reachable, by a different key
+    """
+    SHADOW_DOM = "shadow-dom"
+    IFRAME = "iframe"
+    NOT_FOCUSABLE = "not-focusable"
+    OBSCURED = "obscured"
+    # Reached with arrow keys rather than Tab: the roving-tabindex pattern
+    # used by tablist, menu, radiogroup, tree and grid. A tablist with six
+    # tabs correctly exposes ONE tab stop; the other five carry tabindex=-1
+    # by design. Reporting them as unreachable would fail Week 4's
+    # zero-false-alarms gate on a widget that is built exactly right.
+    ARROW_NAVIGABLE = "arrow-navigable"
+    UNKNOWN = "unknown"
+
+
+class TabStop(BaseModel):
+    """One resting place of keyboard focus, in the order it was observed."""
+    order: int = Field(ge=0, description="Position in the observed tab order.")
+    selector: str
+    cycle: int = Field(ge=0, description="Which full traversal cycle this stop belongs to.")
+    bbox: Optional[BoundingBox] = None
+    role: Optional[str] = None
+    accessible_name: Optional[str] = None
+    # The *authored* tabindex attribute, not the computed one. A positive
+    # value is the signal SC 2.4.3 cares about: it lifts an element out of
+    # DOM order and is the classic way focus order stops matching meaning.
+    tabindex: Optional[int] = None
+    # A4.3 fills this in. `None` means "not measured", which is different
+    # from `False` ("measured, and there is no visible indicator") and must
+    # never be collapsed into it.
+    focus_visible: Optional[bool] = None
+    dom_order: Optional[int] = Field(
+        default=None,
+        description="Position of this element in document order, for comparison with `order`.",
+    )
+
+
+class UnreachedRegion(BaseModel):
+    """Something focusable that the traversal could not get to, and why."""
+    selector: str
+    reason: UnreachedReason
+    detail: Optional[str] = None
+
+
+class TraversalResult(BaseModel):
+    """
+    The outcome of pressing Tab repeatedly on one page state.
+
+    `complete` is the honesty flag. A traversal that timed out, hit an
+    unhandled shadow root, or lost focus to the browser chrome did not
+    observe the page — it observed part of it. Interpreting a partial
+    traversal as though it were whole is how a keyboard checker invents
+    failures, so B4.2 turns `complete=False` into `indeterminate`.
+    """
+    stops: list[TabStop] = []
+    cycles_requested: int = Field(ge=1)
+    cycles_completed: int = Field(ge=0)
+    returned_to_origin: bool = False
+    # A4.2 owns the detection; assert only after N full cycles, N determined
+    # by measurement. Track B only reads the verdict.
+    trap_detected: bool = False
+    trap_selector: Optional[str] = None
+    unreached: list[UnreachedRegion] = []
+    complete: bool
+    incomplete_reason: Optional[str] = None
