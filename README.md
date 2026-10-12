@@ -16,26 +16,56 @@ for the full rationale.
 
 ## Status
 
-Early — Week 1 complete. **A scan runs end to end today:**
-it renders a real page in Chromium, runs `axe-core` against it, maps
-violations onto validated `Finding` models, and exits non-zero when an
-authoritative finding exists.
+**End of Phase 1 (10 Aug – 20 Sep 2026).** A scan runs end to end today: it
+renders a real page in Chromium, runs `axe-core`, adjudicates the results
+axe declines to judge, and exits non-zero when an authoritative failure
+exists.
 
 Verified against paired fixtures: the page with a deliberate contrast
 violation yields exactly one authoritative SC 1.4.3 finding on the right
 element and exits 1; the clean page yields none and exits 0. See
 [`node-worker/test/render-axe.test.mjs`](node-worker/test/render-axe.test.mjs).
 
-Not yet built: the vision and audio agents, calibration, waivers,
-SARIF/VPAT reports, and the GitHub Action. Only findings that map to a
-WCAG success criterion are reported — axe's `best-practice` rules are
-excluded from the conformance report rather than attributed to a
-criterion they don't belong to.
+### What works
 
-This README will grow a demo, an install path, and an honest
-limitations table as those land — see
-[`docs/execution-plan.md`](docs/execution-plan.md) for the schedule and
-each directory's own `README.md` for current state.
+| Capability | State |
+|---|---|
+| Render + `axe-core`, all four result buckets | Working |
+| WCAG criterion mapping, `best-practice` rules excluded | Working |
+| **Contrast-over-image adjudication** — `incomplete` resolved from real sampled pixels | Working |
+| Element capture with boxes in CSS *and* device pixels | Working |
+| Deduplication and waivers | Working |
+| Per-scan latency in the report | Working |
+| Build gating on authoritative findings only | Working |
+
+The contrast wedge is the thing worth knowing about. Where `axe-core`
+returns `incomplete` — most often text over a background image, which it
+cannot read — Verity samples the actual rendered pixels and applies WCAG
+arithmetic to produce an **authoritative** verdict. No model is involved in
+that path.
+
+It only decides where the answer is unambiguous. SC 1.4.3 requires 4.5:1 for
+normal text but 3:1 for large text, and the rendered font size is not
+currently available, so a ratio between 3.0 and 4.5 is reported as
+`cantTell` rather than guessed. That is deliberate: a wrong finding is worse
+than a missing one.
+
+### What does not work yet
+
+- **Keyboard traversal** — the Python judgments (SC 2.1.1 / 2.1.2 / 2.4.3 /
+  2.4.7) are written and tested, but the browser-side traversal is not built,
+  so nothing calls them
+- **Vision** — descoped to an experiment after Spike A. An 8B model abstained
+  on 79% of cases and produced zero false positives but almost no findings.
+  Recorded honestly in
+  [`docs/adr/0002-vision-descope-decision.md`](docs/adr/0002-vision-descope-decision.md)
+- **Audio agent, calibration, SARIF/VPAT reports, the GitHub Action** — not
+  started (Phases 2–4)
+
+For the full picture — including what is half-built and why — see
+[`docs/status.md`](docs/status.md). The schedule is in
+[`docs/execution-plan.md`](docs/execution-plan.md); each directory's own
+`README.md` carries its current state.
 
 ## Layout
 

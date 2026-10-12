@@ -19,6 +19,7 @@ import asyncio
 import logging
 from typing import Awaitable, Callable, Literal, Optional
 
+from verity.agents.validator.severity import assign_severity
 from verity.models.schemas import (
     Confidence,
     Evidence,
@@ -26,7 +27,6 @@ from verity.models.schemas import (
     Level,
     Modality,
     Provenance,
-    Severity,
     SuccessCriterion,
     TabStop,
     TraversalResult,
@@ -73,7 +73,6 @@ def _finding(
     selector: Optional[str] = None,
     trace: Optional[list[str]] = None,
     details: Optional[dict] = None,
-    severity: Severity = Severity.SERIOUS,
 ) -> Finding:
     """
     Build one Finding, with provenance and confidence that match the outcome.
@@ -81,17 +80,33 @@ def _finding(
     B4.2 lives here: `indeterminate` becomes `cantTell` + `NEEDS_REVIEW` +
     confidence 0.0. A finding may not claim certainty it does not have — the
     same rule the contrast adjudicator follows.
+
+    Severity is no longer passed in. It comes from the shared policy (B6.3),
+    which already knows that 2.1.1 and 2.1.2 block a user outright and that
+    an undecided finding cannot be critical — so hard-coding it here would
+    just be a second, quietly diverging opinion.
     """
     from verity.orchestrator.main import derive_finding_id
 
     rule_id = f"keyboard-{sc_id.replace('.', '')}"
     resolved = outcome in ("pass", "fail")
+    criterion = _criterion(sc_id)
+    provenance = Provenance.AUTHORITATIVE if resolved else Provenance.NEEDS_REVIEW
+    mapped_outcome = "cantTell" if outcome == "indeterminate" else outcome
+
+    severity = assign_severity(
+        sc_id=sc_id,
+        level=criterion.level,
+        outcome=mapped_outcome,
+        provenance=provenance,
+        engine_impact=None,  # no engine rates keyboard traversal
+    )
 
     return Finding(
         id=derive_finding_id(rule_id, selector or ""),
         rule_id=rule_id,
-        sc=_criterion(sc_id),
-        provenance=Provenance.AUTHORITATIVE if resolved else Provenance.NEEDS_REVIEW,
+        sc=criterion,
+        provenance=provenance,
         severity=severity,
         confidence=Confidence(
             score=1.0 if resolved else 0.0,
@@ -101,7 +116,7 @@ def _finding(
         ),
         agent="keyboard",
         engine="node-worker",
-        outcome="cantTell" if outcome == "indeterminate" else outcome,
+        outcome=mapped_outcome,
         message=message,
         evidence=Evidence(
             dom_selector=selector,
@@ -159,7 +174,6 @@ def judge_keyboard_operable(result: TraversalResult, page_state_hash: str) -> Fi
             page_state_hash=page_state_hash,
             selector=blockers[0].selector,
             details={"unreachable": [u.selector for u in blockers]},
-            severity=Severity.CRITICAL,
         )
 
     if blind_spots:
@@ -215,7 +229,6 @@ def judge_no_keyboard_trap(result: TraversalResult, page_state_hash: str) -> Fin
             selector=result.trap_selector,
             trace=[s.selector for s in result.stops[-8:]],
             details={"cycles_completed": result.cycles_completed},
-            severity=Severity.CRITICAL,
         )
 
     if not result.complete or result.cycles_completed < result.cycles_requested:

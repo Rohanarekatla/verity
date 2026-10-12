@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from verity.orchestrator.main import scan_url
-from verity.models.schemas import AuditReport, Provenance
+from verity.models.schemas import AuditReport
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -44,14 +44,73 @@ def print_report_summary(report: AuditReport) -> None:
     print("=" * 60 + "\n")
 
 
+def report_expired_waivers(waivers_path: Optional[str] = None) -> list[str]:
+    """
+    B7.3 — print every expired waiver by name and return them.
+
+    Returns the descriptions rather than just a count, so a caller can put
+    them somewhere else (a PR annotation, Week 8's SARIF) without re-reading
+    the file.
+
+    A waiver file that is itself broken is also surfaced here rather than
+    swallowed: if we cannot tell which findings are suppressed, continuing as
+    though none were would be a guess about someone's accessibility policy.
+    """
+    from verity.agents.validator.waivers import (
+        WaiverFileError,
+        expired_waivers,
+        expiring_soon,
+        load_waivers,
+    )
+
+    try:
+        waivers = load_waivers(waivers_path)
+    except WaiverFileError as exc:
+        print("\n  WAIVER FILE INVALID")
+        for line in str(exc).splitlines():
+            print(f"  {line}")
+        print()
+        return [f"waiver file invalid: {exc}"]
+
+    expired = expired_waivers(waivers)
+    if expired:
+        print("\n  EXPIRED WAIVERS — these no longer suppress anything:")
+        for item in expired:
+            print(f"    - {item.describe()}")
+        print(
+            "\n  Renew with a new `expires` date, or fix the finding and "
+            "delete the waiver.\n"
+        )
+
+    # A hard expiry with no warning turns a deliberate policy into a surprise
+    # red build on an unrelated PR, so warn before it bites.
+    for signature, waiver, days in expiring_soon(waivers):
+        logger.warning(
+            "Waiver %s… expires in %d day(s) on %s (approved by %s)",
+            signature[:12], days, waiver.expires, waiver.approved_by,
+        )
+
+    return [item.describe() for item in expired]
+
+
 async def run_cli_scan(
     url: str,
     output_path: Optional[str] = None,
     timeout: float = 30.0,
     worker_cmd: Optional[list[str]] = None,
+    sarif_path: Optional[str] = None,
+    junit_path: Optional[str] = None,
+    config_path: Optional[str] = None,
 ) -> int:
     """Runs the scan orchestrator and saves/prints output."""
+    from verity.report.policy import load_policy
+
     try:
+        # B8.4 — the gating policy is loaded before the scan, so a bad `ci:`
+        # block fails immediately rather than after a 30-second render.
+        policy = load_policy(config_path)
+        logger.info("CI policy: %s", policy.describe())
+
         logger.info(f"Starting scan for URL: {url}")
         report: AuditReport = await scan_url(
             url=url, node_worker_command=worker_cmd, timeout=timeout
@@ -68,21 +127,58 @@ async def run_cli_scan(
                 f.write(report.model_dump_json(indent=2))
             logger.info(f"Audit report saved successfully to: {out_file.resolve()}")
 
-        # B1.4: non-zero exit when authoritative findings exist, zero on a
-        # clean page. Only AUTHORITATIVE findings gate — AI-assisted and
-        # needs-review annotate but must never fail a build. This is the
-        # default `fail_on: authoritative` policy, hard-coded until the
-        # configurable gating policy lands in Week 8 (B8.4).
-        gating = [
-            f for f in report.findings
-            if f.provenance is Provenance.AUTHORITATIVE
-            and f.outcome == "fail"
-            and not f.waived
-        ]
+        # B8.1/B8.2 — SARIF for GitHub code scanning.
+        if sarif_path:
+            from verity.report.sarif import repo_relative_path, write_sarif
+
+            written = write_sarif(report, sarif_path, policy=policy)
+            logger.info(f"SARIF written to: {written.resolve()}")
+            if repo_relative_path(report.target) is None:
+                # Say it out loud rather than letting someone wonder why no
+                # annotation appeared. See docs/sarif-reference.md §5.
+                logger.warning(
+                    "Target %r is not a file inside the repository, so GitHub "
+                    "cannot place inline PR annotations; findings will appear "
+                    "in the Security tab only.",
+                    report.target,
+                )
+
+        # B8.3 — JUnit for every CI that is not GitHub Actions.
+        if junit_path:
+            from verity.report.junit import write_junit
+
+            written = write_junit(report, junit_path, policy=policy)
+            logger.info(f"JUnit XML written to: {written.resolve()}")
+
+        # B7.3 — an expired waiver fails CI, by name.
+        #
+        # Checked before the findings gate and reported separately, because
+        # the two mean different things. A failing finding says "your page
+        # has a defect"; an expired waiver says "a decision you made has run
+        # out and nobody renewed it". Collapsing them into one exit code
+        # would leave a team fixing the wrong thing.
+        #
+        # Note the finding this waiver used to cover has *also* reappeared
+        # and may be in `gating` below — that is deliberate, not double
+        # reporting. See process_findings.
+        expiry_failures = report_expired_waivers()
+
+        # B8.4 — gating is now the policy's decision, not a hardcoded rule.
+        # The default is still `fail_on: authoritative`: only deterministic
+        # verdicts gate, and AI-assisted or needs-review findings annotate
+        # without ever breaking a build. A team can widen or disable it via
+        # `ci:` in their config, which is how report-only adoption works on
+        # day one.
+        gating = policy.gating_findings(report.findings)
         if gating:
             logger.info(
-                f"{len(gating)} authoritative finding(s) — failing with exit code 1."
+                "%d gating finding(s) under %s — failing with exit code 1.",
+                len(gating),
+                policy.describe(),
             )
+            return 1
+
+        if expiry_failures:
             return 1
 
         return 0
@@ -116,6 +212,32 @@ def main() -> None:
         default=None,
         help="Custom command to run Node worker (e.g. 'node node-worker/dist/index.js')",
     )
+    # B8.1/B8.2 — SARIF for GitHub code scanning. Inline PR annotations need
+    # the target to be a file inside the repo; see docs/sarif-reference.md §5.
+    scan_parser.add_argument(
+        "--sarif",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Write SARIF 2.1.0 output for GitHub code scanning",
+    )
+    # B8.3 — JUnit for every CI that is not GitHub Actions.
+    scan_parser.add_argument(
+        "--junit",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Write JUnit XML output (Jenkins, GitLab, CircleCI, Azure)",
+    )
+    # B8.4 — gating policy. Default stays `fail_on: authoritative`.
+    scan_parser.add_argument(
+        "-c",
+        "--config",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Config file carrying a `ci: { fail_on, annotate_on }` block",
+    )
 
     args = parser.parse_args()
 
@@ -127,6 +249,9 @@ def main() -> None:
                 output_path=args.output,
                 timeout=args.timeout,
                 worker_cmd=worker_cmd_list,
+                sarif_path=args.sarif,
+                junit_path=args.junit,
+                config_path=args.config,
             )
         )
         sys.exit(exit_code)
