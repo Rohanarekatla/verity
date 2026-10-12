@@ -133,10 +133,32 @@ def test_waiver_marks_finding_and_attaches_metadata(tmp_path):
 
 
 def test_unmatched_waiver_leaves_finding_unwaived(tmp_path):
+    """
+    A complete, valid waiver for a signature nothing produced must not
+    suppress anything else.
+
+    Note the waiver here is fully populated. Before B7.1 this test used a
+    one-field stub (`justification: "x"`), which now fails validation — an
+    incomplete waiver is an error rather than a silently ignored line, so
+    that stub no longer represents anything a user could write.
+    """
     waivers = tmp_path / "waivers.yaml"
-    waivers.write_text('partialFingerprints:\n  "' + "0" * 64 + '":\n    justification: "x"\n', encoding="utf-8")
+    waivers.write_text(
+        textwrap.dedent(
+            f"""\
+            partialFingerprints:
+              "{'0' * 64}":
+                justification: "Waives a finding this engine never emits."
+                approved_by: "Design Lead"
+                created: "2026-08-17"
+                expires: "2027-08-17"
+            """
+        ),
+        encoding="utf-8",
+    )
     out = process_findings([make_finding()], waivers_path=waivers)
     assert out[0].waived is False
+    assert "waiver" not in out[0].evidence.computed_values
 
 
 def test_missing_waivers_file_is_not_an_error(tmp_path):

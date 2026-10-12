@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Verity",
+          "version": "0.1.0",
+          "informationUri": "https://github.com/Rohanarekatla/verity",
+          "rules": [
+            {
+              "id": "color-contrast",
+              "name": "ColorContrast",
+              "shortDescription": {
+                "text": "SC 1.4.3 \u2014 Contrast (Minimum)"
+              },
+              "fullDescription": {
+                "text": "WCAG 2.2 success criterion 1.4.3 (Contrast (Minimum)), level AA."
+              },
+              "helpUri": "https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html",
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "tags": [
+                  "accessibility",
+                  "wcag",
+                  "wcag143",
+                  "level-aa"
+                ],
+                "verity.successCriterion": "1.4.3",
+                "verity.wcagLevel": "AA",
+                "verity.modality": "deterministic"
+              }
+            },
+            {
+              "id": "image-alt",
+              "name": "ImageAlt",
+              "shortDescription": {
+                "text": "SC 1.1.1 \u2014 Contrast (Minimum)"
+              },
+              "fullDescription": {
+                "text": "WCAG 2.2 success criterion 1.1.1 (Contrast (Minimum)), level AA."
+              },
+              "helpUri": "https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html",
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "tags": [
+                  "accessibility",
+                  "wcag",
+                  "wcag111",
+                  "level-aa"
+                ],
+                "verity.successCriterion": "1.1.1",
+                "verity.wcagLevel": "AA",
+                "verity.modality": "deterministic"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "color-contrast",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "Contrast 1.14:1 fails SC 1.4.3 (element: #hero)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "data/fixtures/contrast-fail.html"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "#hero",
+                  "kind": "element"
+                }
+              ]
+            }
+          ],
+          "partialFingerprints": {
+            "verityFindingSignature/v1": "f84d07e21710a06b5fffcfe5144167bf79c71cc9b6c9c64ff37b3193a4d48808"
+          },
+          "properties": {
+            "verity.severity": "critical",
+            "verity.provenance": "authoritative",
+            "verity.outcome": "fail",
+            "verity.successCriterion": "1.4.3",
+            "verity.wcagLevel": "AA",
+            "verity.agent": "axe-core",
+            "verity.confidence": 1.0,
+            "verity.confidenceMethod": "deterministic",
+            "verity.waived": false,
+            "verity.findingId": "color-contrast-abc123abc123"
+          }
+        },
+        {
+          "ruleId": "image-alt",
+          "ruleIndex": 1,
+          "level": "warning",
+          "message": {
+            "text": "Contrast 1.14:1 fails SC 1.4.3 (element: #logo)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "data/fixtures/contrast-fail.html"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "#logo",
+                  "kind": "element"
+                }
+              ]
+            }
+          ],
+          "partialFingerprints": {
+            "verityFindingSignature/v1": "9247f5a91245825f2e4649e9d251b1877c06f14afebcbc0a8a102ce5486bf1cb"
+          },
+          "properties": {
+            "verity.severity": "serious",
+            "verity.provenance": "ai assisted",
+            "verity.outcome": "fail",
+            "verity.successCriterion": "1.1.1",
+            "verity.wcagLevel": "AA",
+            "verity.agent": "axe-core",
+            "verity.confidence": 0.7,
+            "verity.confidenceMethod": "vision",
+            "verity.waived": false,
+            "verity.findingId": "image-alt-abc123abc123",
+            "verity.model": "qwen2.5-vl-7b-4bit"
+          }
+        },
+        {
+          "ruleId": "color-contrast",
+          "ruleIndex": 0,
+          "level": "note",
+          "message": {
+            "text": "Contrast 1.14:1 fails SC 1.4.3 (element: #over-image)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "data/fixtures/contrast-fail.html"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "#over-image",
+                  "kind": "element"
+                }
+              ]
+            }
+          ],
+          "partialFingerprints": {
+            "verityFindingSignature/v1": "aeb7b8f3ddb57db9299af2d6e9be4cabcc35127698d80d779721f1543e266a82"
+          },
+          "properties": {
+            "verity.severity": "serious",
+            "verity.provenance": "needs review",
+            "verity.outcome": "cantTell",
+            "verity.successCriterion": "1.4.3",
+            "verity.wcagLevel": "AA",
+            "verity.agent": "axe-core",
+            "verity.confidence": 0.0,
+            "verity.confidenceMethod": "axe-incomplete",
+            "verity.waived": false,
+            "verity.findingId": "color-contrast-abc123abc123"
+          }
+        }
+      ],
+      "properties": {
+        "verity.target": "file:///C:/Users/Nikhil/OneDrive/Desktop/verity/data/fixtures/contrast-fail.html",
+        "verity.standard": "WCAG2.2-AA",
+        "verity.rulesetVersion": "1.0.0",
+        "verity.policy": "fail_on=authoritative, annotate_on=everything",
+        "verity.inlineAnnotationsPossible": true,
+        "verity.latencySeconds": 2.0
+      }
+    }
+  ]
+}
