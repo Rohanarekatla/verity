@@ -1,15 +1,16 @@
 """
 verity/agents/validator/dedup.py — deduplication and waiver application.
 
-Landed ahead of schedule (B6.1 dedup, B7.1/B7.2 waivers). Expiry enforcement
-is B7.3 and is deliberately not implemented here.
+The waiver *schema* and expiry rules live in `waivers.py` (B7.1, B7.3); this
+module applies them (B7.2). Keeping them apart matters because the schema is
+pure data validation with no notion of a Finding, and it should stay
+testable on its own.
 """
 
 import hashlib
+from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
-import yaml
 
 from verity.models.schemas import Finding
 
@@ -49,28 +50,21 @@ def signature_for(finding: Finding) -> str:
 
 def load_waivers(waivers_path: Optional[Path | str] = None) -> Dict[str, Any]:
     """
-    Load active waivers from the YAML configuration.
+    Load and validate the waiver file (B7.1).
 
-    Defaults to the repo-root `waivers.yaml`, not a cwd-relative one.
+    Thin delegation to `waivers.load_waivers`, kept so the existing import
+    surface does not change. Returns `{signature: Waiver}` — every record is
+    schema-checked, so a malformed waiver raises rather than being skipped.
     """
-    path = Path(waivers_path) if waivers_path is not None else DEFAULT_WAIVERS_PATH
-    if not path.exists():
-        return {}
+    from verity.agents.validator.waivers import load_waivers as _load
 
-    with open(path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-
-    fingerprints = data.get("partialFingerprints") or {}
-    if not isinstance(fingerprints, dict):
-        raise ValueError(
-            f"{path}: 'partialFingerprints' must be a mapping of "
-            "signature -> waiver record"
-        )
-    return fingerprints
+    return _load(waivers_path)
 
 
 def process_findings(
-    findings: List[Finding], waivers_path: Optional[Path | str] = None
+    findings: List[Finding],
+    waivers_path: Optional[Path | str] = None,
+    today: Optional[date] = None,
 ) -> List[Finding]:
     """
     Deduplicate findings and apply waivers to matching signatures.
@@ -79,8 +73,23 @@ def process_findings(
     before the `incomplete` bucket, so where the same rule and selector appear
     in both, the authoritative result is the one kept and the undecided
     duplicate is dropped — which is the right way round.
+
+    **Only *active* waivers suppress (B7.3).** An expired waiver is not
+    applied, so the finding it used to cover reappears and gates normally —
+    which is what an expiry date is for. The lapsed waiver is still recorded
+    on the finding under `waiver_expired`, because "this was waived and the
+    waiver ran out on 3 March" is exactly what a reader needs; a finding that
+    silently reappears looks like a false positive.
+
+    `today` is injectable so expiry behaviour is testable without freezing
+    the clock.
     """
-    waivers = load_waivers(waivers_path)
+    from verity.agents.validator.waivers import active_waivers
+
+    all_waivers = load_waivers(waivers_path)
+    live = active_waivers(all_waivers, today)
+    lapsed = {s: w for s, w in all_waivers.items() if s not in live}
+
     unique_findings: Dict[str, Finding] = {}
 
     for finding in findings:
@@ -89,18 +98,25 @@ def process_findings(
         if signature in unique_findings:
             continue
 
-        waiver_record = waivers.get(signature)
-        if isinstance(waiver_record, dict):
+        waiver = live.get(signature)
+        if waiver is not None:
             finding.waived = True
             # Attach waiver metadata to the finding's evidence computed values
             finding.evidence.computed_values["waiver"] = {
                 "signature": signature,
-                "justification": waiver_record.get(
-                    "justification", "No justification provided"
-                ),
-                "approved_by": waiver_record.get("approved_by", "Unknown"),
-                "created": waiver_record.get("created"),
-                "expires": waiver_record.get("expires"),
+                "justification": waiver.justification,
+                "approved_by": waiver.approved_by,
+                "created": waiver.created.isoformat(),
+                "expires": waiver.expires.isoformat(),
+            }
+        elif signature in lapsed:
+            expired = lapsed[signature]
+            # Deliberately does NOT set waived=True — the finding gates again.
+            finding.evidence.computed_values["waiver_expired"] = {
+                "signature": signature,
+                "justification": expired.justification,
+                "approved_by": expired.approved_by,
+                "expired_on": expired.expires.isoformat(),
             }
 
         unique_findings[signature] = finding

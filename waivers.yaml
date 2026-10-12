@@ -1,26 +1,59 @@
 # Waivers — accepted, justified conformance failures.
 #
+# A waiver is a decision to stop looking at a real accessibility defect.
+# Someone will rely on the thing you agreed not to fix. So every field below
+# is REQUIRED (B7.1) and the expiry date is enforced (B7.3).
+#
+# ---------------------------------------------------------------------------
 # Keyed by finding signature: sha256("<sc_id>|<normalised selector>|<rule_id>"),
 # as produced by verity.agents.validator.generate_finding_signature.
 #
-# To obtain the signature for a finding, run a scan with -o report.json and
-# read `evidence.computed_values.waiver.signature` once waived, or compute it:
+# To get the signature for a finding, run a scan with -o report.json and read
+# `evidence.computed_values.waiver.signature` once waived, or compute it:
 #
 #   python -c "from verity.agents.validator import generate_finding_signature as s; \
 #              print(s('1.4.3', '#btn', 'color-contrast'))"
 #
-# The shipped default waives NOTHING. A waiver is a per-project decision a team
-# makes about its own site; it must never ship suppressing a finding out of the
-# box, and never target a test fixture — that hides exactly the regressions the
-# fixtures exist to catch.
+# ---------------------------------------------------------------------------
+# Required fields, and why each one is not optional:
 #
-# Expiry is recorded but NOT yet enforced — that is B7.3 (Week 7).
+#   justification   Why is this acceptable? At least 15 characters, and
+#                   "n/a" / "TBD" / "ok" / "wontfix" are rejected — they are
+#                   what people type when a field is required but unchecked.
+#   approved_by     Who decided? An accessibility waiver is somebody's
+#                   accountability, not a config value. (`approver` also
+#                   parses — the execution plan uses that spelling.)
+#   created         When? Distinguishes a considered decision from one made
+#                   in a hurry during a release.
+#   expires         Until when? The field that stops a waiver becoming
+#                   permanent by default. Must be after `created`.
+#
+# Unknown field names are rejected rather than ignored, so a typo like
+# `expiry:` fails loudly instead of silently never expiring.
+#
+# ---------------------------------------------------------------------------
+# What expiry actually does (B7.3), because it is two things:
+#
+#   1. The waiver STOPS SUPPRESSING. The finding reappears and gates the
+#      build again. The lapsed waiver is recorded on the finding under
+#      `waiver_expired` so it does not look like a new false positive.
+#   2. CI FAILS, naming the waiver, its approver and how many days overdue.
+#
+# The expiry day itself is still valid: `expires: 2026-12-31` means "good
+# through the 31st". A warning is logged for the 30 days before, so a lapse
+# is never a surprise red build on an unrelated PR.
+#
+# ---------------------------------------------------------------------------
+# The shipped default waives NOTHING. A waiver is a per-project decision a
+# team makes about its own site; it must never ship suppressing a finding out
+# of the box, and never target a test fixture — that hides exactly the
+# regressions the fixtures exist to catch.
 #
 # Example (commented out — replace the signature with a real one):
 #
 # partialFingerprints:
-#   "<64-hex-char signature>":
-#     justification: "Brand colors explicitly approved by the design team."
+#   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef":
+#     justification: "Brand colours approved by the design team; rebrand is scheduled for Q2."
 #     approved_by: "Design Lead"
 #     created: "2026-08-17"
 #     expires: "2027-08-17"
