@@ -1,0 +1,54 @@
+name: Verity — propose baseline update
+
+# A8.3 — the baseline-commit workflow. It regenerates the accessibility
+# baseline and opens a PULL REQUEST with the result. It never commits to a
+# branch directly and never runs on its own: accepting a new set of findings
+# as "known" is a human decision, so this is manual (workflow_dispatch) and the
+# output is a PR a person reviews and merges. A baseline that updated itself
+# automatically would silently absorb real regressions.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Repo-relative path to the built HTML file to baseline"
+        required: true
+        type: string
+      baseline-path:
+        description: "Where the committed baseline lives"
+        required: false
+        default: ".verity/baseline.json"
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  propose-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Regenerate the baseline
+        uses: ./action
+        with:
+          target: ${{ inputs.target }}
+          write-baseline: ${{ inputs.baseline-path }}
+          upload-sarif: "false"
+
+      - name: Open a PR with the updated baseline
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: verity/baseline-update
+          title: "Update Verity accessibility baseline"
+          commit-message: "chore: update Verity accessibility baseline"
+          body: >
+            Regenerated the accessibility baseline from a fresh scan of
+            `${{ inputs.target }}`. Review the diff: each added entry is a
+            finding this accepts as known (it will no longer gate the build);
+            each removed entry is a finding that is gone. Merge only once the
+            additions are understood — a baseline is a record of what you have
+            decided to live with, not a way to silence CI.
+          add-paths: ${{ inputs.baseline-path }}
+          delete-branch: true
