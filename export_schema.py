@@ -40,17 +40,30 @@ BOUNDARY_MODELS = [
 ]
 
 
-def export_to_json():
+SCHEMA_PATH = Path(__file__).resolve().parent / "verity-schema.json"
+
+
+def build_schema() -> dict:
+    """The exported contract as a dict. One source of truth for the file
+    writer and the drift test, so 'what we would write' and 'what we compare
+    against' cannot diverge."""
     _, top_level_schema = models_json_schema(
         [(model, "serialization") for model in BOUNDARY_MODELS]
     )
+    return top_level_schema
 
-    out_path = Path(__file__).resolve().parent / "verity-schema.json"
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(top_level_schema, f, indent=2)
 
-    exported = sorted(top_level_schema.get("$defs", {}))
-    print(f"JSON Schema successfully exported to {out_path}")
+def schema_json() -> str:
+    """The exact string form written to verity-schema.json (trailing newline
+    included, so a file comparison is byte-for-byte)."""
+    return json.dumps(build_schema(), indent=2) + "\n"
+
+
+def export_to_json():
+    SCHEMA_PATH.write_text(schema_json(), encoding="utf-8")
+
+    exported = sorted(build_schema().get("$defs", {}))
+    print(f"JSON Schema successfully exported to {SCHEMA_PATH}")
     print(f"{len(exported)} definitions: {', '.join(exported)}")
 
 
