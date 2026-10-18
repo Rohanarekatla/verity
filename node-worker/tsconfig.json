@@ -18,6 +18,7 @@
     "crawler/**/*.ts",
     "static/**/*.ts",
     "interaction/**/*.ts",
-    "state_explorer/**/*.ts"
+    "state_explorer/**/*.ts",
+    "contract/**/*.ts"
   ]
 }
