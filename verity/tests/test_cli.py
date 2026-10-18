@@ -104,6 +104,39 @@ async def test_best_practice_rules_do_not_become_wcag_findings(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+async def test_write_baseline_flag_records_findings(tmp_path: Path):
+    """A8.3: --write-baseline records the scan's findings as a loadable,
+    content-addressed baseline. The Action's baseline workflow depends on it."""
+    mock_worker_script = (
+        "import sys, json; "
+        "exec('while True:\\n"
+        "  line = sys.stdin.readline()\\n"
+        "  if not line: break\\n"
+        "  req = json.loads(line)\\n"
+        "  m = req.get(\"method\")\\n"
+        "  res = {\"jsonrpc\": \"2.0\", \"id\": req[\"id\"]}\\n"
+        "  res[\"result\"] = {\"artifactId\": \"art-123\", \"page_state\": {\"content_hash\": \"abc1234\"}} if m == \"render\" else {\"violations\": [{\"id\": \"color-contrast\", \"tags\": [\"wcag143\"], \"help\": \"Low contrast\", \"impact\": \"serious\", \"selector\": \"#btn\", \"description\": \"Text contrast below 4.5:1\"}]}\\n"
+        "  print(json.dumps(res))\\n"
+        "  sys.stdout.flush()\\n')"
+    )
+    baseline_file = tmp_path / "baseline.json"
+
+    await run_cli_scan(
+        url="https://example.com",
+        timeout=5.0,
+        worker_cmd=[sys.executable, "-c", mock_worker_script],
+        write_baseline_path=str(baseline_file),
+    )
+
+    assert baseline_file.exists()
+    from verity.report.baseline import load_baseline  # also re-verifies the content address
+
+    baseline = load_baseline(baseline_file)
+    assert len(baseline.entries) == 1
+    assert baseline.entries[0].sc_id == "1.4.3"
+
+
+@pytest.mark.asyncio
 async def test_run_cli_scan_invalid_url():
     exit_code = await run_cli_scan(url="", timeout=2.0)
     assert exit_code == 1
