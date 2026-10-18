@@ -502,6 +502,35 @@
           "default": false,
           "title": "Ambiguous",
           "type": "boolean"
+        },
+        "font_size_px": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Size Px"
+        },
+        "font_weight": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Weight"
+        },
+        "font_uniform": {
+          "default": false,
+          "title": "Font Uniform",
+          "type": "boolean"
         }
       },
       "required": [

@@ -287,6 +287,13 @@ class RegionSample(BaseModel):
     # near the text was swallowed into the text class). The adjudicator must
     # keep such a region needs_review, never pass it.
     ambiguous: bool = False
+    # BC-A2 — the rendered font, so SC 1.4.3 can pick 3:1 (large) or 4.5:1
+    # (normal) per node. None = not read (or an older worker); `font_uniform`
+    # is True only when every text node in the region shares one size and
+    # weight. Anything short of that leaves the 3.0–4.5 band `cantTell`.
+    font_size_px: Optional[float] = None
+    font_weight: Optional[int] = None
+    font_uniform: bool = False
 
 
 # --- Keyboard traversal (A4.1–A4.2 produce it, B4.1–B4.4 interpret it) ---
