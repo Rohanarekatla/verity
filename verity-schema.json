@@ -272,7 +272,7 @@
       "type": "object"
     },
     "Finding": {
-      "description": "Represents a single accessibility rule evaluation result.\n\n`rule_id` is the engine's own rule name (`color-contrast`, `image-alt`)\nand is carried verbatim. `id` is this finding's identity, derived from\nthe rule and the selector. They are separate fields because the dedup\nsignature needs the rule, and recovering it by string-surgery on `id`\ncouples dedup to whatever format `id` happens to use this week.",
+      "description": "Represents a single accessibility rule evaluation result.\n\n`rule_id` is the engine's own rule name (`color-contrast`, `image-alt`)\nand is carried verbatim. `id` is this finding's identity, derived from\nthe rule and the selector. They are separate fields because the dedup\nsignature needs the rule, and recovering it by string-surgery on `id`\ncouples dedup to whatever format `id` happens to use this week.\n\n**B6.2 \u2014 provenance is enforced here, at construction time.** It is a\nrequired field with no default, and `_provenance_is_coherent` below\nrejects combinations that contradict themselves. Provenance is not a\nreporting concern that gets filled in later; it is the thing that decides\nwhether a finding may fail someone's build, so an incoherent one must be\nunconstructable rather than merely discouraged.",
       "properties": {
         "id": {
           "title": "Id",
