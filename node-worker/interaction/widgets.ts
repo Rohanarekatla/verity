@@ -33,6 +33,7 @@ import type {
   WidgetInventory,
   WidgetNode,
 } from "../contract/contract-types.js";
+import { ROVING_ROLES } from "./traverse.js";
 
 // Container roles whose owned items are what the user moves between, and the
 // item roles each one owns. Keep in sync with the APG patterns we have
@@ -59,7 +60,7 @@ export interface ExerciseOptions {
 }
 
 export async function inventoryWidgets(page: Page): Promise<WidgetInventory> {
-  return page.evaluate(inventoryInPage, CONTAINER_ITEMS);
+  return page.evaluate(inventoryInPage, { containerItems: CONTAINER_ITEMS, rovingRoles: ROVING_ROLES });
 }
 
 export async function exerciseWidget(page: Page, options: ExerciseOptions): Promise<ExerciseResult> {
@@ -255,7 +256,11 @@ function snapshotInPage(watch: string[]): {
   return { active, states, missing };
 }
 
-function inventoryInPage(containerItems: Record<string, string[]>): WidgetInventory {
+function inventoryInPage(args: {
+  containerItems: Record<string, string[]>;
+  rovingRoles: string[];
+}): WidgetInventory {
+  const { containerItems, rovingRoles } = args;
   function cssPath(node: Element): string {
     if (node.id) return `#${CSS.escape(node.id)}`;
     const parts: string[] = [];
@@ -387,8 +392,21 @@ function inventoryInPage(containerItems: Record<string, string[]>): WidgetInvent
       .filter((d) => parseInt(d.getAttribute("tabindex") ?? "", 10) > 0)
       .map(cssPath);
 
+    // A trigger inside a roving-tabindex widget (the APG "tabs with action
+    // buttons" example) carries tabindex=-1 by design and is reached with the
+    // arrow keys — the same ARROW_NAVIGABLE rule traverse.ts applies.
+    let rovingAncestor: string | null = null;
+    for (let a = el.parentElement; a; a = a.parentElement) {
+      const r = roleOf(a);
+      if (r && rovingRoles.includes(r)) {
+        rovingAncestor = cssPath(a);
+        break;
+      }
+    }
+
     widgets.push({
       root: describe(el),
+      roving_ancestor: rovingAncestor,
       items: items.map(describe),
       related: [...related.values()].map(describe),
       positive_tabindex_descendants: positive,

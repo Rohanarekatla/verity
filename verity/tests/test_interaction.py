@@ -358,3 +358,61 @@ async def test_gate_rejects_missing_or_undeclared_fixtures():
     assert any("missing" in p for p in await verify_contract_fixtures(fake_runs("pass", "fail"), missing))
     undeclared = gate_contract(fixtures=None)
     assert any("no fixtures" in p for p in await verify_contract_fixtures(fake_runs("pass", "fail"), undeclared))
+
+
+# --- regressions from the live APG reference implementations ---------------
+
+@pytest.mark.asyncio
+async def test_tabindex_minus_one_inside_a_roving_widget_is_not_a_failure():
+    """
+    APG "tabs with action buttons": the menu buttons inside the tablist carry
+    tabindex=-1 and move under the arrow keys. Failing them as unreachable was
+    a false alarm on a reference implementation.
+    """
+    roving = Widget(root=node("#act", aria_haspopup="true", tabindex=-1), roving_ancestor="#tablist")
+    plain = Widget(root=node("#act2", aria_haspopup="true", tabindex=-1))
+    run = await run_contracts(
+        WidgetInventory(widgets=[roving, plain]), exercise_returning(),
+        {"menu-button": load_contracts()["menu-button"]},
+    )
+    verdicts = {(r.widget, r.assertion_id): r.outcome for r in run.results}
+    assert verdicts[("#act", "trigger-in-tab-sequence")] == "cantTell"
+    assert verdicts[("#act2", "trigger-in-tab-sequence")] == "fail"
+
+
+def menu_snap(i: int, active: str | None, menu_open: bool, activedescendant: str | None = None):
+    menu_attrs = {"id": "menu"}
+    if activedescendant:
+        menu_attrs["aria_activedescendant"] = activedescendant
+    return InteractionSnapshot(
+        step_index=i, active=active,
+        states=[
+            node("#mb", aria_haspopup="true", aria_controls="menu",
+                 **({"aria_expanded": "true"} if menu_open else {})),
+            node("#menu", role="menu", hidden=not menu_open, **menu_attrs),
+        ],
+    )
+
+
+@pytest.mark.asyncio
+async def test_aria_activedescendant_counts_as_focus_on_the_item():
+    """APG "menu button, aria-activedescendant": DOM focus stays on the menu."""
+    items = [node(f"#mi{i}", role="menuitem", id=f"mi{i}") for i in (1, 2)]
+    widget = Widget(
+        root=node("#mb", aria_haspopup="true", aria_controls="menu"),
+        items=items, related=[node("#menu", role="menu", id="menu", hidden=True)],
+    )
+    ex = exercise_returning(
+        menu_snap(-1, None, False),
+        menu_snap(0, "#mb", False),
+        menu_snap(1, "#menu", True, "mi1"),
+        menu_snap(2, "#menu", True, "mi2"),
+        menu_snap(3, "#mb", False),
+        menu_snap(4, "#menu", True, "mi1"),
+        menu_snap(5, "#mb", False),
+    )
+    run = await run_contracts(WidgetInventory(widgets=[widget]), ex, {"menu-button": load_contracts()["menu-button"]})
+    r = by_id(run)
+    for aid in ("open-focuses-first-item", "arrow-down-moves-to-next-item",
+                "escape-closes-and-returns-focus", "space-opens-menu", "items-use-managed-focus"):
+        assert r[aid].outcome == "pass", (aid, r[aid].detail)

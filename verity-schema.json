@@ -1053,6 +1053,18 @@
           },
           "title": "Positive Tabindex Descendants",
           "type": "array"
+        },
+        "roving_ancestor": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Roving Ancestor"
         }
       },
       "required": [

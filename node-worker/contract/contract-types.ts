@@ -198,6 +198,7 @@ export interface Widget {
   items?: WidgetNode[];
   related?: WidgetNode[];
   positive_tabindex_descendants?: string[];
+  roving_ancestor?: string | null;
 }
 
 export interface WidgetInventory {

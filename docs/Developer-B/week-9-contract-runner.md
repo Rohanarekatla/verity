@@ -66,3 +66,11 @@ purpose — please sanity-check the reasoning:
 Assertions without their own `wcag:` default to 4.1.2 (structure) or 2.1.1
 (keyboard). `rule_id` is `apg-<contract>-<assertion>`, so dedup sees each
 assertion separately.
+
+## Checked against the real APG examples
+
+`eval/apg_reference_check.py` runs the contracts on 8 live W3C APG pages.
+The first run found two false alarms in my checks (action buttons inside
+tabs; aria-activedescendant menus), both fixed — now 0 failures. Details in
+`docs/measurements/apg-reference-implementations.md`. Please add dialog and
+combobox pages to its list when those contracts land.
