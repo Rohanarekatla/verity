@@ -66,9 +66,9 @@ human decision; a self-updating baseline would silently absorb regressions.
 The gating half (fail only on findings *new* since the baseline) is B7.4, which
 consumes `verity/report/baseline.py`'s `diff_report`.
 
-## Not verifiable from here
+## Verified on a real PR
 
-Confirming an annotation actually renders inline needs a PR against a repo with
-code scanning enabled (see `../docs/sarif-reference.md` §6). The Action's shape
-is built to that contract; the live confirmation is the one step that needs a
-real repo.
+Confirmed on 18 Oct 2026 (BC-A3): the SARIF upload produced an inline
+failure annotation on the scanned file and the build failed on the
+authoritative finding. Details, and what is still unverified (gating only on
+*new* findings, pending B7.4), in `../docs/sarif-reference.md` §6.
