@@ -1,12 +1,13 @@
 # ADR-0002: Spike A — whether Vision stays in scope
 
-**Status:** DRAFT — decision pending the Saturday 22 Aug pair session.
-**Date:** 30/08/2026
-**Signed:** Nikhil ____ / Rohan Arekatla (both must sign — see team-plan §2.6)
+**Status:** ACCEPTED
+**Date:** 2026-10-18 (Context 30/08/2026; Decision written after the Spike A run, signed off late)
+**Signed:** Nikhil (proposed / authored Context) / Rohan Arekatla (agreed 2026-10-18)
 
-> This draft carries the Context section only. The Decision is deliberately
-> blank: it cannot be written until the corpus has been run against a wired
-> model, and it must be made **jointly**.
+> The Context was written in Week 2; the Decision could not be until the corpus
+> had run against a wired model. It has now (see
+> [`../measurements/spike-a.md`](../measurements/spike-a.md)), so the Decision
+> below is written against real numbers, not a prediction.
 
 ---
 
@@ -74,13 +75,36 @@ Agreed and written down before results existed:
 
 ## Decision
 
-> _To be written Saturday 22 Aug, jointly. One of:_
->
-> - **Vision stays in scope** — bar met on both precision and latency.
-> - **Vision descoped to experiment** — behind a flag, not a shipped
->   feature; project continues on the deterministic + contrast-maths path.
-> - **Vision stays, caching pulled forward** — precision met, latency
->   between the soft and hard bars; Week 17's caching work moves earlier.
+**Vision is descoped to an experiment.** It lives behind a flag, off by
+default, and is not a shipped feature. The product continues on the
+deterministic + contrast-maths path that Weeks 1–4 built (axe-core,
+pixel-sampled contrast adjudication, keyboard traversal).
+
+This is the middle option, and it is chosen **knowingly** — which is the whole
+point of the spike. The bar was set before results existed; the results did
+not meet it; we are not moving the bar to fit them. A model that abstained on
+79% of cases and produced zero verdicts across 48 alt-text cases has not
+demonstrated it can make accessibility judgments at the precision the product
+requires. It also has not *failed dangerously* — it abstained rather than
+fabricated, which is the safe direction — so "experiment, behind a flag" is
+honest: the capability is not dead, it is unproven, and shipping it as if it
+were proven is the one thing this ritual exists to prevent.
+
+Two measured caveats keep this from being a verdict on vision in general, and
+both are recorded rather than buried:
+
+- The run used a **7B-4bit proxy on an M4/16 GB, not the specified 8B build**
+  (Engineer B's compute constraint — see the mlx-vlm backend work). A stronger
+  model may abstain less.
+- **Two of three judgments were unmeasurable this week.** Focus-visible (B2.3)
+  had no focused screenshot to score until A4.3 landed — which it now has, so
+  that judgment becomes measurable for the first time in Phase 3. The
+  contrast-localisation set was never labelled.
+
+So the experiment is not shelved, it is **gated on a re-run**: the flag stays
+off until vision is re-measured against the bar on (a) the intended model and
+(b) the now-measurable focus-visible judgment. Until then, nothing in a shipped
+report depends on a model — consistent with ADR-0003.
 
 _Result against the bar (alt-text, B2.2; measured 2026-08-18, 7B-4bit
 stand-in on M4/16 GB — see [`../measurements/spike-a.md`](../measurements/spike-a.md)):_
@@ -104,13 +128,57 @@ above is from a 7B-4bit proxy, not the specified 8B build.
 
 ## Consequences
 
-> _To be written with the decision._
+- **No shipped finding depends on a model.** The product's trust story stays
+  simple: everything that can fail a build is deterministic. This is the same
+  commitment ADR-0003 makes from the other direction, and the two should be
+  read together.
+- **The Bible's claims are trimmed to match.** Any marketing or README line
+  implying shipped AI accessibility judgment comes out until the re-run
+  clears the bar. We describe vision as experimental, flag-gated, and
+  unproven — because it is.
+- **The vision code is kept, not deleted.** Schemas, rubrics, the mlx-vlm
+  backend and the three judgments stay in-tree behind the flag. The spike's
+  value is the measurement, and throwing the code away would mean re-running
+  the spike from scratch to revisit the decision.
+- **A4.3 changes what is measurable.** Focus-visible now has a real signal
+  (the worker's computed-style diff), so the Phase-3 re-run can score two
+  judgments, not one. That materially changes the evidence the next decision
+  rests on.
+- **The kill criterion still stands.** Phase 3's own gate (Week 12) says if
+  false positives can't be bounded, vision is cut entirely. This ADR does not
+  pre-empt that; it just refuses to ship vision *before* that gate.
 
 ---
 
 ## Alternatives rejected
 
-> _To be written with the decision. At minimum, record why the bar was not
-> set lower once the results were known — or, if it was renegotiated, say so
-> openly and say why. A bar quietly moved after the fact is the failure mode
-> this whole ritual exists to prevent._
+- **Vision stays in scope.** Rejected: the bar was not met on either recall or
+  abstention, and precision was undefined because there were no findings to be
+  precise about. Shipping would be claiming a capability the measurement does
+  not support.
+- **Lower the bar to match the result.** Explicitly rejected, and recorded
+  here because this is the exact failure the ritual guards against. The bar
+  (precision floor + abstention ceiling) was agreed in writing *before* the
+  run, for the stated reason that a precision number alone is gameable by a
+  model that always abstains — which is precisely what happened. Moving the
+  bar now would retrofit success onto a result that did not earn it. We did
+  not renegotiate it; we recorded that it was not met.
+- **Cut vision entirely.** Rejected *for now* — the abstain-not-fabricate
+  behaviour and the two unmeasured judgments mean the capability is unproven,
+  not disproven, and the measured caveats (proxy model, unmeasurable
+  focus-visible) are concrete reasons the next run could differ. Deleting it
+  would discard the spike's investment before the evidence is actually in.
+  Week 12's kill criterion is where "cut entirely" gets decided on bounded-FP
+  evidence.
+
+---
+
+## Rohan's sign-off note
+
+Agreed. I'd have been uncomfortable signing "stays in scope" on these numbers,
+and equally uncomfortable with "cut entirely" while B2.3 was literally
+unmeasurable — which was partly my gap, since the focused-screenshot capture
+(A4.3) didn't exist until Week 4. "Descoped to experiment, gated on a re-run"
+is the reading I can defend: it's honest about the failure, it doesn't throw
+away the measurement, and it ties the comeback to a concrete, now-satisfiable
+precondition rather than to optimism.
