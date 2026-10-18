@@ -1,0 +1,25 @@
+<!doctype html>
+<!--
+  A9.4 fail fixture for data/apg-contracts/menu-button.yaml. Opens on
+  Enter, but leaves focus on the button and never sets aria-expanded. The
+  runner must fail `open-focuses-first-item` and `expanded-true-when-open`;
+  the checks that need focus inside the menu (ArrowDown, Escape) are
+  cantTell, because their precondition was never reached.
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>APG menu button — fail</title></head>
+  <body>
+    <button id="actions" aria-haspopup="true" aria-controls="actions-menu">Actions</button>
+    <ul role="menu" id="actions-menu" aria-labelledby="actions" hidden>
+      <li role="menuitem" id="mi-1" tabindex="-1">Cut</li>
+      <li role="menuitem" id="mi-2" tabindex="-1">Copy</li>
+      <li role="menuitem" id="mi-3" tabindex="-1">Paste</li>
+    </ul>
+    <button id="after">After the widget</button>
+    <script>
+      const btn = document.getElementById("actions");
+      const menu = document.getElementById("actions-menu");
+      btn.addEventListener("click", () => { menu.hidden = !menu.hidden; });
+    </script>
+  </body>
+</html>

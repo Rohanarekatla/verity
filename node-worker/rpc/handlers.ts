@@ -6,6 +6,8 @@
  * `runAxe`          — inject axe-core, return its four buckets (A1.4).
  * `sampleRegion`    — read real pixels behind a text element for contrast (A3.1–A3.4).
  * `traverseTabOrder`— press Tab and record where focus lands (A4.1–A4.3).
+ * `inventoryWidgets`— list widgets with explicit ARIA semantics (A9.2).
+ * `exerciseWidget`  — play focus/key steps on a widget, snapshot each (A9.1, A9.3).
  * `releaseArtifact` — close the live page when done with it.
  */
 
@@ -15,6 +17,8 @@ import { render } from "../crawler/render.js";
 import { runAxeOnPage } from "../static/axe.js";
 import { sampleRegion } from "../static/sampling.js";
 import { traverseTabOrder } from "../interaction/traverse.js";
+import { exerciseWidget, inventoryWidgets } from "../interaction/widgets.js";
+import type { InteractionStep } from "../contract/contract-types.js";
 import { peekPage, takePage } from "../crawler/pages.js";
 
 const WORKER_VERSION = "0.1.0";
@@ -181,6 +185,76 @@ export function registerHandlers(dispatcher: Dispatcher): void {
   );
 
   /**
+   * inventoryWidgets — every widget on the live page that carries explicit
+   * ARIA semantics (A9.2). Read-only; the Interaction Agent matches these
+   * against the APG contracts. Nothing is inferred from class names or
+   * layout — an unlabelled div is not a widget.
+   */
+  dispatcher.register(
+    "inventoryWidgets",
+    async (params: unknown) => {
+      const artifactId = requireStringParam(params, "artifactId");
+      const live = requireLivePage(artifactId);
+      try {
+        return await inventoryWidgets(live.page);
+      } catch (err) {
+        throw new RpcHandlerError(
+          ErrorCode.INTERNAL_ERROR,
+          err instanceof Error ? err.message : String(err),
+          { artifactId },
+        );
+      }
+    },
+    30_000,
+  );
+
+  /**
+   * exerciseWidget — play focus/key steps against the live page and snapshot
+   * the watched selectors after each (A9.1). Bounded by a step budget, a
+   * wall-clock budget, and a per-step timeout (A9.3); hitting any of them is
+   * `complete: false`, never a finished run. MUTATES the page — call it after
+   * everything that needs the rendered state (axe, sampling, traversal).
+   */
+  dispatcher.register(
+    "exerciseWidget",
+    async (params: unknown) => {
+      const artifactId = requireStringParam(params, "artifactId");
+      const live = requireLivePage(artifactId);
+      const steps = requireArrayParam(params, "steps") as InteractionStep[];
+      for (const s of steps) {
+        const ok =
+          typeof s === "object" && s !== null &&
+          ((s.action === "focus" && typeof s.target === "string") ||
+            (s.action === "press" && typeof s.key === "string"));
+        if (!ok) {
+          throw new RpcHandlerError(
+            ErrorCode.INVALID_PARAMS,
+            `each step must be {action:"focus",target} or {action:"press",key}; got ${JSON.stringify(s)}`,
+          );
+        }
+      }
+      const watch = requireArrayParam(params, "watch").filter((w): w is string => typeof w === "string");
+      const maxSteps = optionalNumberParam(params, "maxSteps");
+      const maxMs = optionalNumberParam(params, "maxMs");
+      try {
+        return await exerciseWidget(live.page, {
+          steps,
+          watch,
+          ...(maxSteps === undefined ? {} : { maxSteps }),
+          ...(maxMs === undefined ? {} : { maxMs }),
+        });
+      } catch (err) {
+        throw new RpcHandlerError(
+          ErrorCode.INTERNAL_ERROR,
+          err instanceof Error ? err.message : String(err),
+          { artifactId },
+        );
+      }
+    },
+    60_000,
+  );
+
+  /**
    * releaseArtifact — close the live page and free its browser resources.
    *
    * Idempotent: releasing an unknown or already-released artifact is a no-op,
@@ -228,6 +302,29 @@ function optionalBoolParam(params: unknown, key: string): boolean | undefined {
       ErrorCode.INVALID_PARAMS,
       `"${key}" must be a boolean when provided`,
     );
+  }
+  return value;
+}
+
+function requireLivePage(artifactId: string): NonNullable<ReturnType<typeof peekPage>> {
+  const live = peekPage(artifactId);
+  if (!live) {
+    throw new RpcHandlerError(
+      ErrorCode.INVALID_PARAMS,
+      `no live page for artifactId "${artifactId}" (already released, or render did not produce it)`,
+      { artifactId },
+    );
+  }
+  return live;
+}
+
+function requireArrayParam(params: unknown, key: string): unknown[] {
+  const value =
+    typeof params === "object" && params !== null && !Array.isArray(params)
+      ? (params as Record<string, unknown>)[key]
+      : undefined;
+  if (!Array.isArray(value)) {
+    throw new RpcHandlerError(ErrorCode.INVALID_PARAMS, `"${key}" is required and must be an array`);
   }
   return value;
 }

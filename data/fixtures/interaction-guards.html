@@ -1,0 +1,22 @@
+<!doctype html>
+<!--
+  A9.3 guard fixture for exerciseWidget. Each control misbehaves in a way the
+  interaction budget must contain rather than be held hostage by:
+    #spin  — Enter blocks the main thread for 3 s (past the 2 s step timeout)
+    #leave — Enter follows a link, so the page the widget was on is gone
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Interaction guards</title></head>
+  <body>
+    <button id="spin" aria-expanded="false">Spins on Enter</button>
+    <a id="leave" href="#somewhere-else">Navigates on Enter</a>
+    <button id="plain">Plain</button>
+    <script>
+      document.getElementById("spin").addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        const until = Date.now() + 3000;
+        while (Date.now() < until) {}
+      });
+    </script>
+  </body>
+</html>
