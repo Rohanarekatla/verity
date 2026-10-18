@@ -1,8 +1,8 @@
 # ADR-0004: Three-state keyboard outcomes, and what a pass has to earn
 
-**Status:** PROPOSED — decision drafted by B, awaiting Rohan's agreement and both signatures.
-**Date:** _pending_
-**Signed:** Nikhil ____ / Rohan ____ (both must sign — see team-plan §2.6)
+**Status:** ACCEPTED
+**Date:** 2026-10-18 (Decision drafted Week 4; signed off late alongside ADR-0003)
+**Signed:** Nikhil (proposed / authored) / Rohan Arekatla (agreed 2026-10-18)
 **Week:** 4 (7–13 Sep)
 
 ---
@@ -97,9 +97,23 @@ surfaced `ARROW_NAVIGABLE`; without it the checker would have reported five
 unreachable tabs on the first APG reference implementation and failed the
 gate on a widget built exactly to spec.
 
-> _Rohan — B's proposed wording. Rule 3 in particular is a commitment about
-> how we work, not just about this checker, so it needs a real yes from you
-> rather than a nod._
+> **Rohan — agreed, signed, including rule 3 as a standing commitment.** I'm
+> saying yes to rule 3 with my eyes open because I just paid its cost: A4.1's
+> `ARROW_NAVIGABLE` classification did not exist in my head until the tablist
+> contract named it, and without it the traversal would have reported five
+> unreachable tabs on the first APG example. So "contract before checker" is
+> not theory to me now — it is the thing that kept us off a false alarm on a
+> textbook-correct widget. I accept that menu/menubar/radiogroup/tree/
+> treegrid/grid/listbox/toolbar each cost a contract first in Phase 2, and I'd
+> rather pay that than ship a heuristic that guesses which widgets may hide tab
+> stops.
+>
+> One refinement I'll own on the Track A side, not a change to the decision:
+> rule 2 depends on `complete` being truthful, and the honest cycle boundary in
+> headless Chromium turned out to be "focus returned to `document.body`", not
+> "focus wrapped to the first element". I found that while measuring N for A4.2
+> and fixed it; flagging it here so the dependency in the first Consequence is
+> concrete rather than abstract.
 
 ---
 
