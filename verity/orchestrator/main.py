@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional, Any
 
 from verity.agents.contrast import adjudicate_contrast, flag_needs_review
+from verity.agents.keyboard import resolve_with_retries
 from verity.agents.validator import assign_severity, explain_severity, process_findings
 from verity.models.schemas import (
     AuditReport,
@@ -23,6 +24,7 @@ from verity.models.schemas import (
     Provenance,
     Modality,
     RegionSample,
+    TraversalResult,
 )
 from verity.orchestrator.rpc_client import RPCClient
 
@@ -203,6 +205,75 @@ async def _adjudicate_incomplete_contrast(
     return adjudicate_contrast(finding, sample)
 
 
+# BC-A1 — measure the focus indicator during traversal.
+#
+# `True` costs a focused-vs-baseline computed-style diff per tab stop. Left
+# off, every `TabStop.focus_visible` comes back `None` ("not measured"), and
+# `judge_focus_visible` correctly returns `indeterminate` for SC 2.4.7 on
+# every page — the criterion would be permanently needs-review and never a
+# real verdict. A4.3 was built to make it measurable, so we measure it.
+#
+# Agreed with Track A rather than assumed; see
+# docs/Developer-B/BC-A1-wire-keyboard-traversal.md.
+MEASURE_FOCUS_VISIBLE = True
+
+
+async def _run_keyboard_traversal(
+    rpc_call: Any, artifact_id: str, page_state_hash: str
+) -> list[Finding]:
+    """
+    BC-A1 — traverse the page's tab order and map it to SC 2.1.1 / 2.1.2 /
+    2.4.3 / 2.4.7.
+
+    This is the call that turns the keyboard wedge from "built and tested"
+    into something a `verity scan` actually emits. The worker method (A4.1–
+    A4.3), the `TraversalResult` contract, the four judges (B4.1) and the
+    retry policy (B4.4) all already existed; nothing here is new logic, it
+    is the wiring between them.
+
+    Same graceful-fallback shape as `_adjudicate_incomplete_contrast`, for
+    the same reason: a worker too old to know the method, a timeout, a
+    payload that does not validate — none of those is evidence of a keyboard
+    defect, so none may produce a finding. Returning `[]` means "we could
+    not check", which is the honest outcome and costs the user nothing. The
+    alternative — inferring a defect from our own inability to look — is the
+    false positive the whole product is built to avoid.
+
+    Note this runs on the *live* page, like `sampleRegion`: it must be called
+    on the same `artifact_id` the render produced, before `releaseArtifact`.
+    """
+    async def run_traversal() -> TraversalResult:
+        raw = await rpc_call(
+            "traverseTabOrder",
+            {
+                "artifactId": artifact_id,
+                "measureFocusVisible": MEASURE_FOCUS_VISIBLE,
+            },
+        )
+        return TraversalResult.model_validate(raw)
+
+    try:
+        # resolve_with_retries owns B4.2 (three-state outcome) and B4.4
+        # (re-run while indeterminate, capped, never escalating to `fail`
+        # because the attempts ran out).
+        findings, attempts = await resolve_with_retries(
+            run_traversal, page_state_hash
+        )
+    except Exception as exc:
+        logger.info(
+            "Keyboard traversal unavailable (%s); no keyboard findings this run.",
+            exc.__class__.__name__,
+        )
+        return []
+
+    logger.info(
+        "Keyboard traversal produced %d finding(s) in %d attempt(s).",
+        len(findings),
+        attempts,
+    )
+    return findings
+
+
 def build_conformance_map(findings: list[Finding]) -> dict[str, str]:
     """
     Collapse findings to one outcome per success criterion, worst-first.
@@ -342,7 +413,18 @@ async def scan_url(
                 len(non_wcag),
                 ", ".join(sorted(set(non_wcag))),
             )
-            
+
+        # Step 3.75: BC-A1 — keyboard traversal.
+        #
+        # Runs on the live page, so it has to happen before the `finally`
+        # releases the artifact. Appended to the same list the axe findings
+        # went into, so dedup, waivers, severity and the conformance map all
+        # treat keyboard findings identically to every other kind — which is
+        # the point of having one Finding model.
+        findings.extend(
+            await _run_keyboard_traversal(rpc_call, artifact_id, content_hash)
+        )
+
         # Step 3.5: Deduplicate and apply waivers
         findings = process_findings(findings)
 
