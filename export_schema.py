@@ -24,6 +24,9 @@ from verity.models.schemas import (
     # named here or they will not appear in the exported contract at all.
     RegionSample,
     TraversalResult,
+    WidgetInventory,
+    ExerciseResult,
+    InteractionStep,
 )
 
 # The roots of the cross-language contract. Nested models come along for free.
@@ -37,6 +40,11 @@ BOUNDARY_MODELS = [
     # tab-order traversal -> TraversalResult (A4.1, A4.2) — proposed, see
     # docs/Developer-A/week-4-action-items.md
     TraversalResult,
+    # inventoryWidgets() -> WidgetInventory (A9.2)
+    WidgetInventory,
+    # exerciseWidget(steps: InteractionStep[]) -> ExerciseResult (A9.1, A9.3)
+    InteractionStep,
+    ExerciseResult,
 ]
 
 

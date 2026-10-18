@@ -113,7 +113,7 @@ const FOCUS_STYLE_PROPS = [
 // Roles that drive their children with arrow keys rather than Tab (roving
 // tabindex). A `tabindex="-1"` element under one of these is reachable by
 // design — correct authoring, not a barrier. Keep in sync with the APG.
-const ROVING_ROLES = [
+export const ROVING_ROLES = [
   "tablist",
   "menu",
   "menubar",

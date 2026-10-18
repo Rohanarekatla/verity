@@ -65,6 +65,22 @@ class Assertion(BaseModel):
     wcag: Optional[str] = None
 
 
+class ContractFixtures(BaseModel):
+    """
+    A9.4 — the two pages every contract ships with, relative to
+    ``data/fixtures/``. `pass_` is a correct implementation the runner must
+    report clean; `fail` is a broken one on which at least one `violation`
+    must fail. A contract that cannot fail its own fail-fixture checks
+    nothing, and the gate (`verity.agents.interaction.verify_contract_fixtures`)
+    rejects it.
+    """
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    pass_: str = Field(alias="pass")
+    fail: str
+
+
 class ApgContract(BaseModel):
     """
     A validated APG pattern contract.
@@ -86,6 +102,9 @@ class ApgContract(BaseModel):
     keyboard: list[Assertion] = []
     not_asserted: list[str] = []
     reference_implementations: list[str] = []
+    # Optional at load time so a draft contract can be written before its
+    # fixtures; the A9.4 gate is what refuses to ship one without them.
+    fixtures: Optional[ContractFixtures] = None
 
     @field_validator("structure", "keyboard")
     @classmethod
