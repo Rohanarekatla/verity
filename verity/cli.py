@@ -101,6 +101,7 @@ async def run_cli_scan(
     sarif_path: Optional[str] = None,
     junit_path: Optional[str] = None,
     config_path: Optional[str] = None,
+    write_baseline_path: Optional[str] = None,
 ) -> int:
     """Runs the scan orchestrator and saves/prints output."""
     from verity.report.policy import load_policy
@@ -149,6 +150,22 @@ async def run_cli_scan(
 
             written = write_junit(report, junit_path, policy=policy)
             logger.info(f"JUnit XML written to: {written.resolve()}")
+
+        # A7.2 / A8.3 — record the current findings as a baseline. This is how
+        # the baseline-commit workflow regenerates the file it proposes in a
+        # PR. Writing a baseline is not gating: it reflects whatever the scan
+        # found, so it runs regardless of the exit code below.
+        if write_baseline_path:
+            from verity.report.baseline import build_baseline, write_baseline
+
+            baseline = build_baseline(report)
+            write_baseline(baseline, Path(write_baseline_path))
+            logger.info(
+                "Baseline written to %s (%d finding(s), id %s)",
+                write_baseline_path,
+                len(baseline.entries),
+                baseline.baseline_id[:12],
+            )
 
         # B7.3 — an expired waiver fails CI, by name.
         #
@@ -238,6 +255,15 @@ def main() -> None:
         metavar="PATH",
         help="Config file carrying a `ci: { fail_on, annotate_on }` block",
     )
+    # A7.2/A8.3 — record this scan's findings as a baseline file. The
+    # baseline-commit workflow uses this, then opens a PR with the result.
+    scan_parser.add_argument(
+        "--write-baseline",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Write a content-addressed baseline of this scan's findings",
+    )
 
     args = parser.parse_args()
 
@@ -252,6 +278,7 @@ def main() -> None:
                 sarif_path=args.sarif,
                 junit_path=args.junit,
                 config_path=args.config,
+                write_baseline_path=args.write_baseline,
             )
         )
         sys.exit(exit_code)
