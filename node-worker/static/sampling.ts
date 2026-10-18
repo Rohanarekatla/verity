@@ -62,6 +62,22 @@ export interface RegionSample {
    * placing the text box precisely instead of guessing it by colour.
    */
   ambiguous: boolean;
+  /**
+   * BC-A2 — computed font size (CSS px) of the text inside the element, or
+   * null when it could not be read. SC 1.4.3's threshold depends on it: 3:1
+   * for large text (>= 24px, or >= 18.66px at weight >= 700), 4.5:1 otherwise.
+   * Measured only — which threshold applies is decided on the Python side.
+   */
+  font_size_px: number | null;
+  /** BC-A2 — computed numeric font weight (100–900), or null when unread. */
+  font_weight: number | null;
+  /**
+   * BC-A2 — true only when every text node inside the element renders at the
+   * same size and weight. A heading with a small inline `<span>` is one region
+   * with two thresholds; reporting a single size for it would misapply one of
+   * them, so a mixed region is reported as such and stays `cantTell`.
+   */
+  font_uniform: boolean;
 }
 
 /**
@@ -97,16 +113,41 @@ function distance(a: Rgb, b: Rgb): number {
 async function readElement(
   page: Page,
   selector: string,
-): Promise<{ foreground: Rgb; width: number; height: number; data: number[]; dpr: number } | null> {
+): Promise<{
+  foreground: Rgb;
+  width: number;
+  height: number;
+  data: number[];
+  dpr: number;
+  font: { size: number | null; weight: number | null; uniform: boolean };
+} | null> {
   // Foreground from computed style, plus a presence/size check.
   const meta = await page.evaluate((sel) => {
     const el = document.querySelector(sel);
     if (!el) return null;
     const r = el.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return null;
+
+    // BC-A2: the font of every non-blank text node in the element, read from
+    // its parent's computed style (text nodes have no style of their own).
+    const fonts = new Set<string>();
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (!n.textContent || !n.textContent.trim() || !n.parentElement) continue;
+      const cs = window.getComputedStyle(n.parentElement);
+      fonts.add(`${parseFloat(cs.fontSize)}|${parseInt(cs.fontWeight, 10)}`);
+    }
+    // No text node at all (e.g. text drawn by CSS content) — fall back to the
+    // element's own style, which is what that text inherits.
+    if (fonts.size === 0) {
+      const cs = window.getComputedStyle(el);
+      fonts.add(`${parseFloat(cs.fontSize)}|${parseInt(cs.fontWeight, 10)}`);
+    }
+
     return {
       color: window.getComputedStyle(el).color,
       dpr: window.devicePixelRatio,
+      fonts: [...fonts],
     };
   }, selector).catch(() => null);
   if (!meta) return null;
@@ -139,7 +180,28 @@ async function readElement(
   }, pngBase64).catch(() => null);
   if (!pixels) return null;
 
-  return { foreground, width: pixels.width, height: pixels.height, data: pixels.data, dpr: meta.dpr };
+  return {
+    foreground,
+    width: pixels.width,
+    height: pixels.height,
+    data: pixels.data,
+    dpr: meta.dpr,
+    font: smallestFont(meta.fonts),
+  };
+}
+
+/**
+ * Collapse the per-text-node fonts to one size/weight pair. When they differ,
+ * the smallest size (and its weight) is reported for the record, but
+ * `uniform` is false so the adjudicator does not pick a threshold from it.
+ */
+function smallestFont(fonts: string[]): { size: number | null; weight: number | null; uniform: boolean } {
+  const parsed = fonts
+    .map((f) => f.split("|").map(Number))
+    .filter(([s, w]) => Number.isFinite(s) && s > 0 && Number.isFinite(w))
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (parsed.length === 0) return { size: null, weight: null, uniform: false };
+  return { size: parsed[0][0], weight: parsed[0][1], uniform: parsed.length === 1 && fonts.length === 1 };
 }
 
 /**
@@ -160,12 +222,15 @@ export async function sampleRegion(page: Page, selector: string): Promise<Region
     background_pixel_count: 0,
     sampled: false,
     ambiguous: false,
+    font_size_px: null,
+    font_weight: null,
+    font_uniform: false,
   };
 
   const read = await readElement(page, selector);
   if (!read) return empty;
 
-  const { foreground, data, dpr } = read;
+  const { foreground, data, dpr, font } = read;
   const counts = new Map<number, number>(); // packed rgb -> count
   let textPixels = 0;
   let bgPixels = 0;
@@ -203,5 +268,8 @@ export async function sampleRegion(page: Page, selector: string): Promise<Region
     background_pixel_count: bgPixels,
     sampled: samples.length > 0,
     ambiguous: textPixels > bgPixels,
+    font_size_px: font.size,
+    font_weight: font.weight,
+    font_uniform: font.uniform,
   };
 }
