@@ -428,6 +428,10 @@ class Widget(BaseModel):
     related: list[WidgetNode] = []
     # Descendants of the root with a positive authored tabindex (SC 2.4.3).
     positive_tabindex_descendants: list[str] = []
+    # Selector of the nearest ancestor with a roving-tabindex role (tablist,
+    # menu, toolbar, …), or None. A tabindex=-1 root under one is reached by
+    # the arrow keys by design — ARROW_NAVIGABLE, not unreachable.
+    roving_ancestor: Optional[str] = None
 
 
 class WidgetInventory(BaseModel):

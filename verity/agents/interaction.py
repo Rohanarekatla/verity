@@ -179,6 +179,26 @@ def _out_of_tab_order(node: WidgetNode) -> bool:
     return node.tabindex is not None and node.tabindex < 0
 
 
+def _tab_sequence_verdict(widget: Widget) -> Verdict:
+    """
+    Is a trigger button reachable from the keyboard at all?
+
+    tabindex=-1 inside a roving-tabindex widget (APG "tabs with action
+    buttons") is reached with the arrow keys by design — the ARROW_NAVIGABLE
+    rule from the traversal. We did not drive those arrows, so it is cantTell,
+    never a fail.
+    """
+    root = widget.root
+    if root.disabled:
+        return ("cantTell", "the button is disabled")
+    if _out_of_tab_order(root) and widget.roving_ancestor:
+        return ("cantTell", f"tabindex={root.tabindex} inside roving-tabindex widget "
+                            f"{widget.roving_ancestor}; reached by arrow keys by design")
+    if _out_of_tab_order(root):
+        return ("fail", f"tabindex={root.tabindex} removes it from the Tab sequence")
+    return ("pass", "reachable by Tab")
+
+
 def _missing_snapshot(run: Optional[ExerciseResult]) -> str:
     if run is None:
         return "the widget could not be exercised"
@@ -418,12 +438,7 @@ def _disclosure_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict[
     else:
         v["controls-references-existing-element"] = ("pass", f"aria-controls resolves to {content.selector}")
 
-    if root.disabled:
-        v["button-in-tab-sequence"] = ("cantTell", "the button is disabled")
-    elif _out_of_tab_order(root):
-        v["button-in-tab-sequence"] = ("fail", f"tabindex={root.tabindex} removes it from the Tab sequence")
-    else:
-        v["button-in-tab-sequence"] = ("pass", "reachable by Tab")
+    v["button-in-tab-sequence"] = _tab_sequence_verdict(widget)
 
     s0, s1, s2 = _after(run, 0), _after(run, 1), _after(run, 2)
 
@@ -490,12 +505,7 @@ def _menu_button_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict
     v["trigger-has-accessible-name"] = (
         ("pass", f"named {root.accessible_name!r}") if _named(root) else ("fail", "the menu button has no accessible name")
     )
-    if root.disabled:
-        v["trigger-in-tab-sequence"] = ("cantTell", "the button is disabled")
-    elif _out_of_tab_order(root):
-        v["trigger-in-tab-sequence"] = ("fail", f"tabindex={root.tabindex} removes it from the Tab sequence")
-    else:
-        v["trigger-in-tab-sequence"] = ("pass", "reachable by Tab")
+    v["trigger-in-tab-sequence"] = _tab_sequence_verdict(widget)
 
     ids = _ids(root.attributes.get("aria-controls"))
     menu = _controlled(widget)
@@ -525,11 +535,6 @@ def _menu_button_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict
         ("pass", "the menu is not displayed before interaction") if menu.hidden
         else ("fail", "the menu is displayed before any interaction")
     )
-    unmanaged = [i.selector for i in items if i.tabindex != -1]
-    v["items-use-managed-focus"] = (
-        ("fail", f"menuitems without tabindex=-1: {', '.join(unmanaged)}") if unmanaged
-        else ("pass", "every menuitem has tabindex=-1")
-    )
 
     sels = [i.selector for i in items]
 
@@ -537,7 +542,36 @@ def _menu_button_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict
         node = _state(snap, menu.selector)
         return None if node is None else not node.hidden
 
+    ids_to_items = {i.attributes["id"]: i.selector for i in items if i.attributes.get("id")}
+
+    def focused_item(snap: Optional[InteractionSnapshot]) -> Optional[str]:
+        """
+        The menuitem the user is on: DOM focus on an item, or DOM focus on the
+        menu with aria-activedescendant naming an item. The APG documents both
+        (the "actions" and "actions-active-descendant" examples); judging only
+        DOM focus would fail the second, correct one.
+        """
+        if snap is None:
+            return None
+        if snap.active in sels:
+            return snap.active
+        if snap.active == menu.selector:
+            m = _state(snap, menu.selector)
+            return ids_to_items.get((m.attributes.get("aria-activedescendant") or "") if m else "")
+        return None
+
     s0, s1, s2, s3, s4 = (_after(run, k) for k in range(5))
+
+    unmanaged = [i.selector for i in items if i.tabindex != -1]
+    uses_activedescendant = any(
+        s is not None and s.active == menu.selector and focused_item(s) is not None for s in (s1, s2)
+    )
+    if not unmanaged:
+        v["items-use-managed-focus"] = ("pass", "every menuitem has tabindex=-1")
+    elif uses_activedescendant:
+        v["items-use-managed-focus"] = ("pass", "focus is managed with aria-activedescendant")
+    else:
+        v["items-use-managed-focus"] = ("fail", f"menuitems without tabindex=-1: {', '.join(unmanaged)}")
 
     opened_by_enter = False
     if s0 is None or s1 is None:
@@ -552,7 +586,7 @@ def _menu_button_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict
 
     if not opened_by_enter:
         v["open-focuses-first-item"] = ("cantTell", "the menu was not opened by Enter")
-    elif s1.active == sels[0]:
+    elif focused_item(s1) == sels[0]:
         v["open-focuses-first-item"] = ("pass", "focus moved to the first menuitem")
     else:
         v["open-focuses-first-item"] = ("fail", f"after opening, focus is on {s1.active or 'the page'}, not the first menuitem")
@@ -570,16 +604,16 @@ def _menu_button_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict
 
     if len(items) < 2:
         v["arrow-down-moves-to-next-item"] = ("cantTell", "only one menuitem")
-    elif s1 is None or s2 is None or s1.active != sels[0]:
+    elif s1 is None or s2 is None or focused_item(s1) != sels[0]:
         v["arrow-down-moves-to-next-item"] = ("cantTell", "precondition not met: first menuitem focused")
-    elif s2.active == sels[1]:
+    elif focused_item(s2) == sels[1]:
         v["arrow-down-moves-to-next-item"] = ("pass", "ArrowDown moved to the second menuitem")
-    elif s2.active not in sels or s2.active == sels[0]:
-        v["arrow-down-moves-to-next-item"] = ("fail", f"ArrowDown left focus on {s2.active or 'the page'}")
+    elif focused_item(s2) in (None, sels[0]):
+        v["arrow-down-moves-to-next-item"] = ("fail", f"ArrowDown left focus on {focused_item(s2) or s2.active or 'the page'}")
     else:
         v["arrow-down-moves-to-next-item"] = ("cantTell", "focus moved within the menu, but not to the next item")
 
-    if s2 is None or s3 is None or not is_open(s2) or s2.active not in sels:
+    if s2 is None or s3 is None or not is_open(s2) or focused_item(s2) is None:
         v["escape-closes-and-returns-focus"] = ("cantTell", "precondition not met: menu open with focus on a menuitem")
     elif not is_open(s3) and s3.active == root.selector:
         v["escape-closes-and-returns-focus"] = ("pass", "Escape closed the menu and returned focus to the button")
