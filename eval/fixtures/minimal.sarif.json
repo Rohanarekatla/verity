@@ -90,7 +90,7 @@
             }
           ],
           "partialFingerprints": {
-            "verityFindingSignature/v1": "f84d07e21710a06b5fffcfe5144167bf79c71cc9b6c9c64ff37b3193a4d48808"
+            "verityFindingSignature/v2": "f84d07e21710a06b5fffcfe5144167bf79c71cc9b6c9c64ff37b3193a4d48808"
           },
           "properties": {
             "verity.severity": "critical",
@@ -132,7 +132,7 @@
             }
           ],
           "partialFingerprints": {
-            "verityFindingSignature/v1": "9247f5a91245825f2e4649e9d251b1877c06f14afebcbc0a8a102ce5486bf1cb"
+            "verityFindingSignature/v2": "9247f5a91245825f2e4649e9d251b1877c06f14afebcbc0a8a102ce5486bf1cb"
           },
           "properties": {
             "verity.severity": "serious",
@@ -175,7 +175,7 @@
             }
           ],
           "partialFingerprints": {
-            "verityFindingSignature/v1": "aeb7b8f3ddb57db9299af2d6e9be4cabcc35127698d80d779721f1543e266a82"
+            "verityFindingSignature/v2": "aeb7b8f3ddb57db9299af2d6e9be4cabcc35127698d80d779721f1543e266a82"
           },
           "properties": {
             "verity.severity": "serious",
