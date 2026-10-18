@@ -1,0 +1,15 @@
+<!doctype html>
+<!--
+  A positive authored tabindex (SC 2.4.3). tabindex="5" lifts the second
+  button out of document order into the tab sequence first — the one
+  machine-checkable focus-order failure keyboard.py asserts. The traversal
+  must report the AUTHORED value 5, not the computed tabIndex.
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Positive tabindex</title></head>
+  <body>
+    <button id="natural-a">Natural A</button>
+    <button id="jumped" tabindex="5">Jumped ahead by tabindex=5</button>
+    <button id="natural-b">Natural B</button>
+  </body>
+</html>

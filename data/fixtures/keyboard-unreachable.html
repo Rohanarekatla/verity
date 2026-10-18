@@ -1,0 +1,17 @@
+<!doctype html>
+<!--
+  A genuine barrier (SC 2.1.1): the middle button is visible and enabled but
+  sits inside an `inert` subtree, so Tab never reaches it. This is the
+  NOT_FOCUSABLE case — a real failure, as distinct from the roving-tabindex
+  and shadow-DOM cases the traversal must NOT report as failures.
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Unreachable control</title></head>
+  <body>
+    <button id="reachable-a">Reachable A</button>
+    <div inert>
+      <button id="stranded">Stranded inside inert</button>
+    </div>
+    <button id="reachable-b">Reachable B</button>
+  </body>
+</html>
