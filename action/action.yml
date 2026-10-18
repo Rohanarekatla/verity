@@ -1,0 +1,155 @@
+name: "Verity Accessibility Scan"
+description: >
+  Run Verity's WCAG conformance engine in CI and surface findings as inline
+  PR annotations via GitHub code scanning. Scans local built HTML from the
+  checkout by default (so annotations land on the right file); a remote URL is
+  a separate mode that reports to the Security tab only.
+author: "Verity"
+
+# A8.1 — the Action wrapping the CLI. A8.2 — Playwright/browser (and model)
+# binaries are cached between runs. The scan-target decision follows
+# docs/sarif-reference.md §5 and ADR discussion: default to a local file so
+# `artifactLocation.uri` is a real repo-relative path and the annotation
+# appears inline; remote URLs cannot be annotated and are opt-in.
+
+inputs:
+  target:
+    description: >
+      Repo-relative path to a built HTML file to scan (default mode). The file
+      must exist in the checkout; it is scanned as a file:// URL so findings
+      map to this path and annotate inline. Mutually exclusive with `url`.
+    required: false
+    default: ""
+  url:
+    description: >
+      Remote URL to scan instead of a local file. Findings cannot be mapped to
+      a source line, so they appear in the Security tab only, not as inline PR
+      annotations. Use only when you have no built file to point at.
+    required: false
+    default: ""
+  config:
+    description: "Path to a config file carrying a `ci: { fail_on, annotate_on }` block."
+    required: false
+    default: ""
+  sarif-file:
+    description: "Where to write the SARIF report."
+    required: false
+    default: "verity-results.sarif"
+  upload-sarif:
+    description: "Upload the SARIF to GitHub code scanning (inline annotations + Security tab)."
+    required: false
+    default: "true"
+  write-baseline:
+    description: >
+      If set, write a baseline of this scan's findings to this path instead of
+      gating on them. Used by the baseline-commit workflow (A8.3), not by a
+      normal gating run.
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: "22"
+        cache: npm
+        cache-dependency-path: ${{ github.action_path }}/../node-worker/package-lock.json
+
+    - name: Set up uv (Python)
+      uses: astral-sh/setup-uv@v3
+
+    # A8.2 — cache the Playwright browser download. Keyed on the worker's
+    # lockfile, so a dependency bump invalidates it; otherwise every run reuses
+    # the same Chromium rather than re-downloading ~150 MB.
+    - name: Cache Playwright browsers
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ms-playwright
+        key: verity-playwright-${{ runner.os }}-${{ hashFiles('**/node-worker/package-lock.json') }}
+        restore-keys: |
+          verity-playwright-${{ runner.os }}-
+
+    # A8.2 — cache the vision model too. Vision is descoped to an experiment
+    # (ADR-0002) and off by default, so a normal scan never downloads it and
+    # this cache stays empty; it is here so enabling the flag later does not
+    # re-download several GB on every run.
+    - name: Cache vision model
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/huggingface
+        key: verity-model-${{ runner.os }}-qwen2.5-vl-7b-4bit
+        restore-keys: |
+          verity-model-${{ runner.os }}-
+
+    - name: Build the Node worker
+      shell: bash
+      working-directory: ${{ github.action_path }}/../node-worker
+      run: |
+        npm ci
+        npx playwright install --with-deps chromium
+        npm run build
+
+    - name: Install Python deps
+      shell: bash
+      working-directory: ${{ github.action_path }}/..
+      run: uv sync
+
+    - name: Resolve scan target
+      id: target
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.url }}" ] && [ -n "${{ inputs.target }}" ]; then
+          echo "::error::Set exactly one of 'target' (local file) or 'url' (remote); not both."
+          exit 1
+        fi
+        if [ -n "${{ inputs.url }}" ]; then
+          echo "scan_target=${{ inputs.url }}" >> "$GITHUB_OUTPUT"
+          echo "::warning::Scanning a remote URL — findings appear in the Security tab only, not as inline PR annotations (see docs/sarif-reference.md §5)."
+        elif [ -n "${{ inputs.target }}" ]; then
+          # A real repo-relative path in the consumer's workspace, as a file:// URL.
+          echo "scan_target=file://${{ github.workspace }}/${{ inputs.target }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "::error::Provide 'target' (a built HTML file in the repo) or 'url'."
+          exit 1
+        fi
+
+    - name: Run Verity scan
+      id: scan
+      shell: bash
+      working-directory: ${{ github.action_path }}/..
+      # Do not abort the job on a non-zero exit here: a gating finding returns
+      # 1, and we still want to upload the SARIF so the annotations appear.
+      # The job is failed explicitly in the final step, after the upload.
+      run: |
+        set +e
+        uv run python -m verity.cli scan "${{ steps.target.outputs.scan_target }}" \
+          --sarif "${{ inputs.sarif-file }}" \
+          ${{ inputs.config && format('--config {0}', inputs.config) || '' }} \
+          ${{ inputs.write-baseline && format('--write-baseline {0}', inputs.write-baseline) || '' }}
+        echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+    - name: Upload SARIF to code scanning
+      if: ${{ inputs.upload-sarif == 'true' && inputs.write-baseline == '' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ github.action_path }}/../${{ inputs.sarif-file }}
+
+    - name: Fail the build on gating findings
+      shell: bash
+      run: |
+        # A baseline-writing run never gates; it exists to record findings.
+        if [ -n "${{ inputs.write-baseline }}" ]; then
+          echo "Baseline run — not gating."
+          exit 0
+        fi
+        if [ "${{ steps.scan.outputs.exit_code }}" != "0" ]; then
+          echo "::error::Verity found gating accessibility findings (exit ${{ steps.scan.outputs.exit_code }})."
+          exit 1
+        fi
+        echo "No gating findings."
+
+branding:
+  icon: "eye"
+  color: "purple"
