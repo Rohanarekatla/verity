@@ -1,13 +1,15 @@
 # ADR-0003: The model localises, the math decides
 
-**Status:** PROPOSED — decision drafted by B, awaiting Rohan's agreement and both signatures.
-**Date:** _pending_
-**Signed:** Nikhil ____ / Rohan ____ (both must sign — see team-plan §2.6)
+**Status:** ACCEPTED
+**Date:** 2026-10-18 (Decision written Week 3; signed off late — see note)
+**Signed:** Nikhil (proposed / authored) / Rohan Arekatla (agreed 2026-10-18)
 **Week:** 3 (31 Aug – 6 Sep)
 
-> Overdue. This should have been written during Week 3's pair session and
-> was not. The context below is what actually shipped; the Decision and
-> Consequences need agreeing together.
+> Signed off late. The Decision was drafted during Week 3 but not agreed at the
+> time; Rohan's review and signature were outstanding until the Phase-2
+> catch-up. Recording the real date rather than backdating it — the lapse is
+> part of the history, and the ritual only works if we are honest about when it
+> slipped.
 
 ---
 
@@ -91,8 +93,21 @@ Three rules follow, and they are testable:
    `AUTHORITATIVE`.** It is `AI_ASSISTED` at best, and `cli.py` never gates a
    build on it.
 
-> _Rohan — this is B's proposed wording, not an agreed decision. Change it,
-> narrow it, or argue with it; it is not ready until we both sign._
+> **Rohan — agreed, signed.** I take the three rules as written; I don't want
+> to narrow them. One thing to record from the Track A side, because it shows
+> the principle is load-bearing beyond contrast: A4.3 (focus-visible) obeys
+> rule 1 by construction. The worker measures a boolean from the rendered
+> pixels and the computed-style diff; the vision model (B2.3) never emits the
+> pass/fail. When I built the traversal I had the option to let the focus-ring
+> judgment come from the model and resisted it for exactly this reason — so the
+> rule already generalises to the second checker, not just the first.
+>
+> On the 3.0–4.5 font-size band: I own the change that would close it (add
+> `fontSize`/`fontWeight` to `RegionSample` so the adjudicator can pick the
+> right threshold per node). I'm agreeing to **defer** it, not drop it — the
+> `cantTell` is honest and the recall it costs is small. If we later see real
+> large-text contrast cases falling into that band often, I'll add the fields;
+> it's a worker change, not a change to this principle.
 
 ---
 
