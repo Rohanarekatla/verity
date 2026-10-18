@@ -24,8 +24,10 @@ from .dedup import (
     generate_finding_signature,
     load_waivers,
     process_findings,
+    region_identity,
     signature_for,
 )
+from .selectors import normalize_selector
 from .severity import assign_severity, explain_severity
 from .waivers import (
     ExpiredWaiver,
@@ -47,15 +49,16 @@ from .waivers import (
 #                  file that loaded before may now be rejected, and a waiver
 #                  past its date stops working — both are behaviour changes a
 #                  consumer can observe.
-#
-# NOT yet changed: the dedup signature still keys on (sc, selector, rule_id).
-# B6.1 calls for (SC, normalised selector, region) with strongest-provenance
-# tie-breaking, which needs A6.1 (selector normalisation) and A6.2 (region
-# identification) to exist first. A7.1 (stable signature surviving a
-# formatter and a class-name hasher) is the same dependency seen from the
-# other side. That change will be another MAJOR bump, because it invalidates
-# every waiver written against the old scheme.
-VALIDATOR_VERSION = "2.0.0"
+#   3.0.0  Week 6/7 signature keys on the NORMALISED selector (A6.1) with a
+#                  region fallback (A6.2); A7.1 — the signature now survives a
+#                  code formatter and a class-name hasher. MAJOR because the
+#                  signature of an unchanged finding changes, so every waiver
+#                  written against the 2.x scheme stops matching and must be
+#                  re-captured. Safe to land now: the shipped waivers.yaml
+#                  waives nothing, so no real waiver is invalidated in the wild
+#                  yet — which is exactly why this goes in before teams write
+#                  real waivers, not after.
+VALIDATOR_VERSION = "3.0.0"
 
 __all__ = [
     "VALIDATOR_VERSION",
@@ -67,6 +70,8 @@ __all__ = [
     "assign_severity",
     "expired_waivers",
     "expiring_soon",
+    "normalize_selector",
+    "region_identity",
     "explain_severity",
     "generate_finding_signature",
     "load_waivers",
