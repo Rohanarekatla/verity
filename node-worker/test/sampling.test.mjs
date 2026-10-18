@@ -116,6 +116,25 @@ test("text over a busy image is flagged ambiguous, not falsely passed", async ()
   }
 });
 
+test("the rendered font is measured, and a mixed region says so (BC-A2)", async () => {
+  const s = session();
+  try {
+    const aid = await render(s, "contrast-sampling.html");
+    s.send(2, "sampleRegion", { artifactId: aid, selector: "#solid-grey" });
+    const solid = (await s.waitFor(2)).result;
+    assert.equal(solid.font_size_px, 20);
+    assert.equal(solid.font_weight, 700, "font-weight: bold computes to 700");
+    assert.equal(solid.font_uniform, true);
+
+    s.send(3, "sampleRegion", { artifactId: aid, selector: "#mixed-font" });
+    const mixed = (await s.waitFor(3)).result;
+    assert.equal(mixed.font_uniform, false, "two sizes in one region is not uniform");
+    assert.equal(mixed.font_size_px, 12, "the smallest size is reported for the record");
+  } finally {
+    s.close();
+  }
+});
+
 test("an absent element returns sampled:false, not an error", async () => {
   const s = session();
   try {
@@ -125,6 +144,8 @@ test("an absent element returns sampled:false, not an error", async () => {
     assert.ok(frame.result, "should return a result, not an error");
     assert.equal(frame.result.sampled, false);
     assert.deepEqual(frame.result.background_samples, []);
+    assert.equal(frame.result.font_size_px, null);
+    assert.equal(frame.result.font_uniform, false);
   } finally {
     s.close();
   }

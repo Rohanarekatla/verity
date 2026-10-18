@@ -107,6 +107,9 @@ export interface RegionSample {
   background_pixel_count?: number;
   sampled: boolean;
   ambiguous?: boolean;
+  font_size_px?: number | null;
+  font_weight?: number | null;
+  font_uniform?: boolean;
 }
 
 export interface RenderArtifact {

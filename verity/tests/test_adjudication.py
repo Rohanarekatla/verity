@@ -65,7 +65,9 @@ def sample(
     backgrounds: list[tuple[int, int, int, int]] | None = None,
     sampled: bool = True,
     ambiguous: bool = False,
+    font: tuple[float, int, bool] | None = None,
 ) -> RegionSample:
+    size, weight, uniform = font if font is not None else (None, None, False)
     bgs = [
         BackgroundSample(r=r, g=g, b=b, count=c)
         for (r, g, b, c) in (backgrounds if backgrounds is not None else [(0, 0, 0, 100)])
@@ -79,6 +81,9 @@ def sample(
         background_pixel_count=2000,
         sampled=sampled,
         ambiguous=ambiguous,
+        font_size_px=size,
+        font_weight=weight,
+        font_uniform=uniform,
     )
 
 
@@ -258,6 +263,62 @@ def test_outcome_always_matches_the_documented_rule_across_every_grey():
             assert out.outcome == "fail" and out.provenance is Provenance.AUTHORITATIVE, v
         else:
             assert out.outcome == "cantTell" and out.provenance is Provenance.NEEDS_REVIEW, v
+
+
+# --- BC-A2: the measured font closes the band -------------------------------
+
+# #858585 on white, ~3.69:1 — inside the band.
+BAND_GREY = Rgb(r=0x85, g=0x85, b=0x85)
+ON_WHITE = [(255, 255, 255, 100)]
+
+
+@pytest.mark.parametrize(
+    "font, expected",
+    [
+        ((24.0, 400, True), "pass"),      # 18pt
+        ((18.6667, 700, True), "pass"),   # 14pt bold
+        ((18.6667, 400, True), "fail"),   # 14pt, not bold
+        ((23.9, 400, True), "fail"),      # just under 18pt
+        ((16.0, 700, True), "fail"),      # bold, but under 14pt
+    ],
+    ids=["18pt", "14pt-bold", "14pt-regular", "under-18pt", "small-bold"],
+)
+def test_band_resolves_when_the_font_is_measured_and_uniform(font, expected):
+    out = adjudicate_contrast(make_incomplete_finding(), sample(BAND_GREY, ON_WHITE, font=font))
+    adj = out.evidence.computed_values["contrast_adjudication"]
+    assert out.outcome == expected
+    assert out.provenance is Provenance.AUTHORITATIVE
+    assert out.sc.modality is Modality.DETERMINISTIC
+    assert out.confidence.score == 1.0
+    assert adj["resolved"] is True
+    assert adj["font_size_px"] == font[0] and adj["font_weight"] == font[1]
+
+
+@pytest.mark.parametrize(
+    "font",
+    [None, (24.0, 400, False), (None, 400, True), (24.0, None, True)],
+    ids=["no-font", "mixed-fonts", "size-unread", "weight-unread"],
+)
+def test_band_stays_cantTell_unless_the_font_settles_it(font):
+    """A mixed or partly-read font is not evidence of size; the band stays open."""
+    s = sample(BAND_GREY, ON_WHITE)
+    if font is not None:
+        s.font_size_px, s.font_weight, s.font_uniform = font
+    out = adjudicate_contrast(make_incomplete_finding(), s)
+    assert out.outcome == "cantTell"
+    assert out.provenance is Provenance.NEEDS_REVIEW
+    assert out.evidence.computed_values["contrast_adjudication"]["reason"] == REASON_THRESHOLD_UNKNOWN
+
+
+def test_font_never_changes_a_verdict_outside_the_band():
+    """Outside 3.0–4.5 both thresholds agree, so the font must be irrelevant."""
+    for font in [(12.0, 400, True), (40.0, 900, True)]:
+        assert adjudicate_contrast(
+            make_incomplete_finding(), sample(WHITE, [(0, 0, 0, 100)], font=font)
+        ).outcome == "pass"
+        assert adjudicate_contrast(
+            make_incomplete_finding(), sample(Rgb(r=0xEE, g=0xEE, b=0xEE), ON_WHITE, font=font)
+        ).outcome == "fail"
 
 
 # --- no model in this path --------------------------------------------------
