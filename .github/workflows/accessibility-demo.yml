@@ -1,0 +1,25 @@
+name: Accessibility (BC-A3 demo)
+
+# BC-A3 — the Week 8 gate, verified for real: run the Verity Action on a PR,
+# upload SARIF, and confirm the finding appears as an inline annotation and
+# the build fails on an authoritative finding. Demo only; this PR is closed
+# unmerged once verified.
+
+on:
+  pull_request:
+    paths:
+      - "demo/**"
+      - ".github/workflows/accessibility-demo.yml"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  verity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./action
+        with:
+          target: demo/index.html
