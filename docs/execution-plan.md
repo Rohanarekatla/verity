@@ -535,3 +535,71 @@ documented coverage gap, and no free self-hostable tool does it well.
 
 **The vision model is deliberately not the load-bearing wall of the
 architecture. The differentiator degrades; it does not disappear.**
+
+---
+
+# Best-in-class backlog — competitive differentiation
+
+> **Added 2026-10-18**, from a competitive analysis of the top tools in this
+> space (axe-core, Lighthouse, Pa11y, IBM Equal Access, Microsoft
+> Accessibility Insights, and the commercial tier: axe DevTools Pro,
+> Siteimprove, Level Access). Source notes: `docs/competitive-analysis.md`.
+
+**The strategic finding.** Almost every "competitor" runs on the *same engine*
+— axe-core sits under axe DevTools, Lighthouse, Accessibility Insights,
+Siteimprove and Pa11y — and automated engines catch only ~30–57% of WCAG by
+their own vendors' numbers. The entire market is crowded onto one library that
+misses roughly half of WCAG. **Verity's reason to exist is the other half:**
+the cases axe marks `incomplete` (contrast-over-image) or cannot test at all
+(keyboard operability, focus order, traps), resolved by a system that is
+*honest about what it does not know and never fabricates*.
+
+**This backlog does not override the 20-week plan or its scope control.** The
+gated plan ships 1.0 first; the deferred list and the slip rule still stand.
+Items are classified by *when*, and the few that contradict an existing
+deferral are called out as such rather than quietly slipped in.
+
+## A — Pull forward (in current scope: integration gaps, not new scope)
+
+These are not new features — they are gaps between "built" and "wired", or
+cheap recall wins already sanctioned by an ADR. They make the differentiators
+we already paid for actually show up in a scan.
+
+| # | Track | Task | Why now |
+|---|---|---|---|
+| BC-A1 | B | **Wire `traverseTabOrder` into `scan_url()`** | The entire keyboard wedge (A4.x + B4.x) is built and tested but never invoked by a real scan — a `verity scan` emits zero keyboard findings today. Highest-ROI item in the repo; the headline differentiator is dark until this lands. |
+| BC-A2 | A | **Close the 3.0–4.5 contrast band** — add `fontSize`/`fontWeight` to `sampleRegion` so the adjudicator applies the correct threshold per node | Pure recall win over axe; ADR-0003 already sanctioned it as a deferred Track-A change, not a new decision. |
+| BC-A3 | A+B | **Verify the Week-8 SARIF annotation gate for real** — a PR on a repo with code scanning enabled, confirming inline annotations render | Already the Sun 18 Oct gate; `sarif-reference.md` §6 flags it as the one thing never verified. "The first useful thing" is unproven until this is seen working once. |
+
+## B — Phase 2 / post-1.0 differentiation (respects the deferred list)
+
+Genuine new scope. Deliberately **not** pulled into the 20-week build, because
+the slip rule and the "adding a seventh success criterion feels cheap" warning
+apply directly here. Recorded so the direction is explicit, and scheduled after
+1.0 or into Phase-2 buffer weeks — never by extending the timeline.
+
+| # | Track | Task | Note vs. existing scope |
+|---|---|---|---|
+| BC-B1 | A+B | **APG contracts beyond the core five** — menu, menubar, radiogroup, tree, grid, listbox, combobox, dialog | **Contradicts the deferred-list entry "APG patterns beyond the core five — diminishing returns before launch."** Kept deferred until 1.0 ships; listed here as the top post-launch coverage moat because the contracts are declarative YAML and compound. |
+| BC-B2 | A+B | **New measurable SCs:** reflow at 400% (1.4.10), text-spacing (1.4.12), target size (2.5.8, WCAG 2.2), `prefers-reduced-motion` | Each is a new success criterion — the exact scope-creep the slip rule warns about. Post-1.0 only, one at a time, each with its own pre-set precision bar. |
+| BC-B3 | A | **`verity-core` as an embeddable library + Playwright/Cypress/Jest matchers** | Distribution, not detection. axe-core's reach *is* its embeddability; this is how Verity gets embedded rather than only run. |
+| BC-B4 | A+B | **Hosted "scan any URL" playground** — Verity's honest report vs axe's `incomplete`s, side by side | The single best conversion surface; also the artifact behind the comparison benchmark below. |
+| BC-B5 | B | **Accelerate VPAT / ACR generation** (already S16.x) and treat it as a headline feature | Already in-plan at Week 16 — flagged here because it is the one output *buyers* need and no OSS tool produces well. Do not cut it under slip pressure. |
+
+## C — Distribution / "most-starred" strategy (non-code, ongoing)
+
+Stars come from distribution and narrative, not from being technically best
+(Lighthouse's ~28k is from shipping inside Chrome; axe-core's ~7k from being
+embedded everywhere). These are marketing/positioning tasks, owned jointly.
+
+| # | Task |
+|---|---|
+| BC-C1 | **Own one story:** *"the accessibility engine that refuses to lie"* — lead every README/post with the provenance + never-fabricate doctrine. It is a unique position in a market of tools that quietly guess. |
+| BC-C2 | **A reproducible, honest benchmark** — "Verity resolves the keyboard trap and the contrast-over-image that axe/Lighthouse mark `incomplete`", with the fixtures and numbers public. |
+| BC-C3 | **Zero-friction trial** — the one-line GitHub Action (shipped) + the playground (BC-B4). |
+| BC-C4 | **Lower the contribution bar** — good-first-issues for new APG contracts (declarative YAML), a public roadmap, and the Contributing guide (S19.5). Contributors become evangelists. |
+
+> **Guardrail.** Nothing in sections B and C may pull a 20-week gate's work
+> forward or displace the evaluation harness. If a best-in-class item starts
+> competing with a gated deliverable, the gated deliverable wins — the plan
+> ships a trustworthy 1.0 first, and differentiation compounds on top of it.
