@@ -199,3 +199,13 @@ reference_implementations:
   - "APG tabs example, automatic activation"
   - "APG tabs example, manual activation"
   - "APG tabs example, vertical orientation"
+
+# ---------------------------------------------------------------------------
+# A9.4 — the contract-fixture gate. The runner must report zero failures on
+# `pass` and fail at least one violation on `fail`; a contract that cannot
+# fail its own fail-fixture is rejected. Paths are relative to data/fixtures/.
+# (Added by Track A in Week 9; the assertions above are unchanged.)
+# ---------------------------------------------------------------------------
+fixtures:
+  pass: apg/tablist-pass.html
+  fail: apg/tablist-fail.html

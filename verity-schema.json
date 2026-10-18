@@ -271,6 +271,52 @@
       "title": "Evidence",
       "type": "object"
     },
+    "ExerciseResult": {
+      "description": "A9.1 \u2014 what happened when the steps were played on a widget.\n\n`complete` is the same honesty flag as TraversalResult's. A9.3's guards\n(step budget, wall-clock budget, a key that hangs, a page that navigates\naway) stop the run early and say so; checks that needed the missing\nsnapshots return cantTell, never a verdict.",
+      "properties": {
+        "snapshots": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/InteractionSnapshot"
+          },
+          "title": "Snapshots",
+          "type": "array"
+        },
+        "steps_requested": {
+          "minimum": 0,
+          "title": "Steps Requested",
+          "type": "integer"
+        },
+        "steps_run": {
+          "minimum": 0,
+          "title": "Steps Run",
+          "type": "integer"
+        },
+        "complete": {
+          "title": "Complete",
+          "type": "boolean"
+        },
+        "incomplete_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Incomplete Reason"
+        }
+      },
+      "required": [
+        "steps_requested",
+        "steps_run",
+        "complete"
+      ],
+      "title": "ExerciseResult",
+      "type": "object"
+    },
     "Finding": {
       "description": "Represents a single accessibility rule evaluation result.\n\n`rule_id` is the engine's own rule name (`color-contrast`, `image-alt`)\nand is carried verbatim. `id` is this finding's identity, derived from\nthe rule and the selector. They are separate fields because the dedup\nsignature needs the rule, and recovering it by string-surgery on `id`\ncouples dedup to whatever format `id` happens to use this week.\n\n**B6.2 \u2014 provenance is enforced here, at construction time.** It is a\nrequired field with no default, and `_provenance_is_coherent` below\nrejects combinations that contradict themselves. Provenance is not a\nreporting concern that gets filled in later; it is the thing that decides\nwhether a finding may fail someone's build, so an incoherent one must be\nunconstructable rather than merely discouraged.",
       "properties": {
@@ -362,6 +408,90 @@
         "page_state_hash"
       ],
       "title": "Finding",
+      "type": "object"
+    },
+    "InteractionSnapshot": {
+      "description": "The widget's observable state after one step (step_index -1 = before any).",
+      "properties": {
+        "step_index": {
+          "title": "Step Index",
+          "type": "integer"
+        },
+        "active": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Active"
+        },
+        "states": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WidgetNode"
+          },
+          "title": "States",
+          "type": "array"
+        },
+        "missing": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Missing",
+          "type": "array"
+        }
+      },
+      "required": [
+        "step_index"
+      ],
+      "title": "InteractionSnapshot",
+      "type": "object"
+    },
+    "InteractionStep": {
+      "description": "One thing the runner asks the worker to do to a widget.",
+      "properties": {
+        "action": {
+          "enum": [
+            "focus",
+            "press"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Key"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "InteractionStep",
       "type": "object"
     },
     "Latency": {
@@ -892,6 +1022,141 @@
         "reason"
       ],
       "title": "UnreachedRegion",
+      "type": "object"
+    },
+    "Widget": {
+      "description": "A9.2 \u2014 one candidate widget, for the Interaction Agent to match against a\ncontract. `items` are what the user moves between: for a container role\n(tablist, menu, menubar) the elements it owns; for a trigger button with\naria-controls, the items of the container it controls. `related` holds\nevery element referenced by id (aria-controls, aria-labelledby, aria-owns)\nfrom the root or an item, so structure checks need no second round-trip.",
+      "properties": {
+        "root": {
+          "$ref": "#/$defs/WidgetNode"
+        },
+        "items": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WidgetNode"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "related": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WidgetNode"
+          },
+          "title": "Related",
+          "type": "array"
+        },
+        "positive_tabindex_descendants": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Positive Tabindex Descendants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "root"
+      ],
+      "title": "Widget",
+      "type": "object"
+    },
+    "WidgetInventory": {
+      "description": "A9.2 \u2014 every widget on the page that carries explicit ARIA semantics.",
+      "properties": {
+        "widgets": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Widget"
+          },
+          "title": "Widgets",
+          "type": "array"
+        },
+        "shadow_roots_skipped": {
+          "default": 0,
+          "title": "Shadow Roots Skipped",
+          "type": "integer"
+        },
+        "iframes_skipped": {
+          "default": 0,
+          "title": "Iframes Skipped",
+          "type": "integer"
+        }
+      },
+      "title": "WidgetInventory",
+      "type": "object"
+    },
+    "WidgetNode": {
+      "description": "One element of a widget, read from the live DOM. Nothing here is inferred:\n`role` is the authored role attribute, or the HTML-AAM implicit role for\nthe few native elements that have an unambiguous one (`<button>`,\n`<a href>`). A `<div class=\"tab\">` with no role is not a tab.",
+      "properties": {
+        "selector": {
+          "title": "Selector",
+          "type": "string"
+        },
+        "tag": {
+          "title": "Tag",
+          "type": "string"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "accessible_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Accessible Name"
+        },
+        "tabindex": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tabindex"
+        },
+        "attributes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "title": "Attributes",
+          "type": "object"
+        },
+        "hidden": {
+          "default": false,
+          "title": "Hidden",
+          "type": "boolean"
+        },
+        "disabled": {
+          "default": false,
+          "title": "Disabled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "selector",
+        "tag"
+      ],
+      "title": "WidgetNode",
       "type": "object"
     }
   }

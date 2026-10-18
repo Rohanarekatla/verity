@@ -1,0 +1,44 @@
+<!doctype html>
+<!--
+  A9.4 pass fixture for data/apg-contracts/tablist.yaml. The APG tabs pattern
+  with automatic activation: roving tabindex, ArrowLeft/ArrowRight with wrap,
+  Home/End, one selected tab, inactive panels hidden. The contract runner must
+  report ZERO failures here — any failure is a bug in the checker.
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>APG tablist — pass</title></head>
+  <body>
+    <button id="before">Before the widget</button>
+    <div role="tablist" id="tabs" aria-label="Entertainment">
+      <button role="tab" id="tab-1" aria-controls="panel-1" aria-selected="true" tabindex="0">Nils</button>
+      <button role="tab" id="tab-2" aria-controls="panel-2" aria-selected="false" tabindex="-1">Agnes</button>
+      <button role="tab" id="tab-3" aria-controls="panel-3" aria-selected="false" tabindex="-1">Complex</button>
+    </div>
+    <div role="tabpanel" id="panel-1" aria-labelledby="tab-1" tabindex="0"><p>Nils panel</p></div>
+    <div role="tabpanel" id="panel-2" aria-labelledby="tab-2" tabindex="0" hidden><p>Agnes panel</p></div>
+    <div role="tabpanel" id="panel-3" aria-labelledby="tab-3" tabindex="0" hidden><p>Complex panel</p></div>
+    <button id="after">After the widget</button>
+    <script>
+      const tabs = [...document.querySelectorAll('[role="tab"]')];
+      function select(tab) {
+        for (const t of tabs) {
+          const on = t === tab;
+          t.setAttribute("aria-selected", String(on));
+          t.tabIndex = on ? 0 : -1;
+          document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+        }
+        tab.focus();
+      }
+      document.getElementById("tabs").addEventListener("keydown", (e) => {
+        const i = tabs.indexOf(document.activeElement);
+        if (i < 0) return;
+        const next = { ArrowRight: (i + 1) % tabs.length, ArrowLeft: (i - 1 + tabs.length) % tabs.length,
+                       Home: 0, End: tabs.length - 1 }[e.key];
+        if (next === undefined) return;
+        e.preventDefault();
+        select(tabs[next]);
+      });
+      for (const t of tabs) t.addEventListener("click", () => select(t));
+    </script>
+  </body>
+</html>

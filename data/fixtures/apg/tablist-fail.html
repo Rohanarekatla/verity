@@ -1,0 +1,31 @@
+<!doctype html>
+<!--
+  A9.4 fail fixture for data/apg-contracts/tablist.yaml. Looks like tabs,
+  announces as tabs, but every tab sits in the Tab sequence (no roving
+  tabindex) and the arrow keys do nothing. The runner must fail
+  `roving-tabindex` and `arrow-keys-move-between-tabs`.
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>APG tablist — fail</title></head>
+  <body>
+    <button id="before">Before the widget</button>
+    <div role="tablist" id="tabs" aria-label="Entertainment">
+      <button role="tab" id="tab-1" aria-controls="panel-1" aria-selected="true">Nils</button>
+      <button role="tab" id="tab-2" aria-controls="panel-2" aria-selected="false">Agnes</button>
+      <button role="tab" id="tab-3" aria-controls="panel-3" aria-selected="false">Complex</button>
+    </div>
+    <div role="tabpanel" id="panel-1" aria-labelledby="tab-1"><p>Nils panel</p></div>
+    <div role="tabpanel" id="panel-2" aria-labelledby="tab-2" hidden><p>Agnes panel</p></div>
+    <div role="tabpanel" id="panel-3" aria-labelledby="tab-3" hidden><p>Complex panel</p></div>
+    <button id="after">After the widget</button>
+    <script>
+      const tabs = [...document.querySelectorAll('[role="tab"]')];
+      for (const t of tabs) t.addEventListener("click", () => {
+        for (const u of tabs) {
+          u.setAttribute("aria-selected", String(u === t));
+          document.getElementById(u.getAttribute("aria-controls")).hidden = u !== t;
+        }
+      });
+    </script>
+  </body>
+</html>

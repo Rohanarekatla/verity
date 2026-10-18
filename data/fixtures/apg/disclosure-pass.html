@@ -1,0 +1,22 @@
+<!doctype html>
+<!--
+  A9.4 pass fixture for data/apg-contracts/disclosure.yaml. The APG
+  disclosure pattern on a native <button>: Enter and Space both toggle,
+  aria-expanded tracks the content's visibility, focus stays on the button.
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>APG disclosure — pass</title></head>
+  <body>
+    <h2>FAQ</h2>
+    <button id="faq-1" aria-expanded="false" aria-controls="faq-1-answer">What is Verity?</button>
+    <div id="faq-1-answer" hidden><p>An accessibility engine that refuses to guess.</p></div>
+    <script>
+      const btn = document.getElementById("faq-1");
+      btn.addEventListener("click", () => {
+        const open = btn.getAttribute("aria-expanded") !== "true";
+        btn.setAttribute("aria-expanded", String(open));
+        document.getElementById("faq-1-answer").hidden = !open;
+      });
+    </script>
+  </body>
+</html>
