@@ -37,7 +37,15 @@ from typing import Callable, Optional
 
 from bs4 import BeautifulSoup
 
-from eval.inject import contrast_over_image, detach_label, reduce_contrast, strip_alt
+from eval.inject import (
+    contrast_over_image,
+    detach_label,
+    keyboard_trap,
+    outline_none,
+    positive_tabindex,
+    reduce_contrast,
+    strip_alt,
+)
 
 HERE = Path(__file__).resolve().parent
 CACHE_DIR = HERE / ".cache"
@@ -70,6 +78,24 @@ class Injection:
     selector: str
     # Which elements on this page are valid targets for this injector?
     targets: Callable[[BeautifulSoup], list]
+
+
+def _focusable_targets(soup: BeautifulSoup) -> list:
+    """
+    Elements a keyboard user can land on: native controls plus anything with
+    an authored tabindex. The three Week-4 keyboard injectors all act on these
+    — a trap, a positive tabindex and an outline:none only mean something on an
+    element that can hold focus.
+    """
+    out: list = []
+    for el in soup.find_all(["a", "button", "input", "select", "textarea"]):
+        if el.name == "a" and not el.has_attr("href"):
+            continue  # an anchor without href is not focusable
+        out.append(el)
+    for el in soup.find_all(attrs={"tabindex": True}):
+        if el not in out:
+            out.append(el)
+    return out
 
 
 INJECTIONS: list[Injection] = [
@@ -118,6 +144,33 @@ INJECTIONS: list[Injection] = [
         # text. Backing an empty <p> with an image introduces no contrast
         # failure, so it would be a mislabelled case.
         targets=lambda soup: [p for p in soup.find_all("p") if p.get_text(strip=True)],
+    ),
+    Injection(
+        name="keyboard_trap",
+        # A trap is SC 2.1.2. axe does not detect keyboard traps at all — that
+        # is exactly why the interaction agent exists — so these cases are
+        # scored against the traversal's trap_detected, not against axe.
+        sc_id="2.1.2",
+        acceptable_sc=["2.1.2"],
+        inject=keyboard_trap.inject,
+        selector="a, button, input, select, textarea, [tabindex]",
+        targets=_focusable_targets,
+    ),
+    Injection(
+        name="positive_tabindex",
+        sc_id="2.4.3",
+        acceptable_sc=["2.4.3"],
+        inject=positive_tabindex.inject,
+        selector="a, button, input, select, textarea, [tabindex]",
+        targets=_focusable_targets,
+    ),
+    Injection(
+        name="outline_none",
+        sc_id="2.4.7",
+        acceptable_sc=["2.4.7"],
+        inject=outline_none.inject,
+        selector="a, button, input, select, textarea, [tabindex]",
+        targets=_focusable_targets,
     ),
 ]
 
@@ -206,6 +259,18 @@ def verify(clean: str, injected: str, inj: Injection) -> dict:
         # Its own marker, never `reduce_contrast`'s: both touch `style`, and a
         # shared marker would let one injector's revert undo the other's.
         "contrast_over_image": {"style", "data-verity-original-style-coi"},
+        # Week-4 keyboard injectors. Each carries its own distinct marker — a
+        # shared one would let one injector's revert silently undo another's
+        # (keyboard_trap, outline_none and reduce_contrast all write to
+        # elements that can also carry `style`).
+        "keyboard_trap": {
+            "onkeydown",
+            "tabindex",
+            "data-verity-original-onkeydown-trap",
+            "data-verity-added-tabindex-trap",
+        },
+        "positive_tabindex": {"tabindex", "data-verity-original-tabindex-pos"},
+        "outline_none": {"style", "data-verity-original-style-outline"},
     }[inj.name]
 
     changed_attrs: set[str] = set()

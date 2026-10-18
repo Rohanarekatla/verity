@@ -1,0 +1,20 @@
+<!doctype html>
+<!--
+  A keyboard trap (SC 2.1.2): the middle input swallows Tab, so focus can
+  enter but never leave with the keyboard. The traversal must set
+  trap_detected = true and name the trapping element.
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Keyboard trap</title></head>
+  <body>
+    <button id="first">First</button>
+    <input id="trap" aria-label="Trapping field" />
+    <button id="last">Last</button>
+    <script>
+      document.getElementById("trap").addEventListener("keydown", function (e) {
+        // Eat Tab in both directions — the classic "focus goes in, never out".
+        if (e.key === "Tab") e.preventDefault();
+      });
+    </script>
+  </body>
+</html>
