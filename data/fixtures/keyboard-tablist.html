@@ -1,0 +1,25 @@
+<!doctype html>
+<!--
+  A correctly-authored APG tablist (roving tabindex). This is the gate's
+  zero-false-alarms case: six tabs expose exactly ONE Tab stop; the other five
+  carry tabindex="-1" and move under the arrow keys. A traversal that reports
+  those five as unreachable fails the Week 4 gate on a widget built to spec.
+  They must come back as ARROW_NAVIGABLE.
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>APG tablist</title></head>
+  <body>
+    <button id="before">Before the widget</button>
+
+    <div role="tablist" aria-label="Entertainment">
+      <button role="tab" id="tab-1" tabindex="0" aria-selected="true">Tab one</button>
+      <button role="tab" id="tab-2" tabindex="-1" aria-selected="false">Tab two</button>
+      <button role="tab" id="tab-3" tabindex="-1" aria-selected="false">Tab three</button>
+      <button role="tab" id="tab-4" tabindex="-1" aria-selected="false">Tab four</button>
+      <button role="tab" id="tab-5" tabindex="-1" aria-selected="false">Tab five</button>
+      <button role="tab" id="tab-6" tabindex="-1" aria-selected="false">Tab six</button>
+    </div>
+
+    <button id="after">After the widget</button>
+  </body>
+</html>
