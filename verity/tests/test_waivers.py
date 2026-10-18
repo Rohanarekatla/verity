@@ -385,8 +385,13 @@ def test_cli_surfaces_a_broken_waiver_file_rather_than_ignoring_it(tmp_path, cap
 
 def test_validator_version_bumped_major_for_the_behaviour_change():
     """
-    B7.1/B7.3 change observable behaviour: files that loaded before may now
-    be rejected, and a waiver past its date stops working. Waiver signatures
-    and Week 7 baselines are pinned to this number.
+    The validator major version tracks observable-behaviour changes, because
+    waiver signatures and Week 7 baselines are pinned to it.
+
+    2.0.0 (Week 7, B7.1/B7.3): waiver schema + expiry.
+    3.0.0 (A6.1/A6.2/A7.1): the signature now keys on the *normalised* selector
+    with a region fallback, so it survives a formatter and a class-name hasher.
+    That changes the signature of an unchanged finding — a MAJOR break that
+    re-captures every waiver — so the major must have moved past 2.
     """
-    assert VALIDATOR_VERSION.split(".")[0] == "2"
+    assert int(VALIDATOR_VERSION.split(".")[0]) >= 3
