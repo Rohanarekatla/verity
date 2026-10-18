@@ -5,6 +5,7 @@
  * `render`          — navigate, capture a RenderArtifact, keep the page live (A1.2/A1.3).
  * `runAxe`          — inject axe-core, return its four buckets (A1.4).
  * `sampleRegion`    — read real pixels behind a text element for contrast (A3.1–A3.4).
+ * `traverseTabOrder`— press Tab and record where focus lands (A4.1–A4.3).
  * `releaseArtifact` — close the live page when done with it.
  */
 
@@ -13,6 +14,7 @@ import { ErrorCode } from "./protocol.js";
 import { render } from "../crawler/render.js";
 import { runAxeOnPage } from "../static/axe.js";
 import { sampleRegion } from "../static/sampling.js";
+import { traverseTabOrder } from "../interaction/traverse.js";
 import { peekPage, takePage } from "../crawler/pages.js";
 
 const WORKER_VERSION = "0.1.0";
@@ -136,6 +138,49 @@ export function registerHandlers(dispatcher: Dispatcher): void {
   );
 
   /**
+   * traverseTabOrder — press Tab across the page and record the focus order
+   * (A4.1), detecting keyboard traps over multiple cycles (A4.2) and, when
+   * asked, measuring focus-visible per stop (A4.3).
+   *
+   * Peeks the live page a prior render produced, so the traversal runs
+   * against the exact state axe and the contrast sampler saw. Returns a
+   * TraversalResult; it holds no verdict — agents/keyboard.py maps it to
+   * SC 2.1.1/2.1.2/2.4.3/2.4.7. A trap or a pathological page is bounded by
+   * maxPresses and reported as `complete: false`, never as a finished run.
+   */
+  dispatcher.register(
+    "traverseTabOrder",
+    async (params: unknown) => {
+      const artifactId = requireStringParam(params, "artifactId");
+      const live = peekPage(artifactId);
+      if (!live) {
+        throw new RpcHandlerError(
+          ErrorCode.INVALID_PARAMS,
+          `no live page for artifactId "${artifactId}" (already released, or render did not produce it)`,
+          { artifactId },
+        );
+      }
+      const cyclesRequested = optionalNumberParam(params, "cyclesRequested");
+      const maxPresses = optionalNumberParam(params, "maxPresses");
+      const measureFocusVisible = optionalBoolParam(params, "measureFocusVisible");
+      try {
+        return await traverseTabOrder(live.page, {
+          ...(cyclesRequested === undefined ? {} : { cyclesRequested }),
+          ...(maxPresses === undefined ? {} : { maxPresses }),
+          ...(measureFocusVisible === undefined ? {} : { measureFocusVisible }),
+        });
+      } catch (err) {
+        throw new RpcHandlerError(
+          ErrorCode.INTERNAL_ERROR,
+          err instanceof Error ? err.message : String(err),
+          { artifactId },
+        );
+      }
+    },
+    120_000,
+  );
+
+  /**
    * releaseArtifact — close the live page and free its browser resources.
    *
    * Idempotent: releasing an unknown or already-released artifact is a no-op,
@@ -168,6 +213,20 @@ function optionalNumberParam(params: unknown, key: string): number | undefined {
     throw new RpcHandlerError(
       ErrorCode.INVALID_PARAMS,
       `"${key}" must be a positive finite number when provided`,
+    );
+  }
+  return value;
+}
+
+/** Read an optional boolean param, rejecting a present-but-wrong value. */
+function optionalBoolParam(params: unknown, key: string): boolean | undefined {
+  if (typeof params !== "object" || params === null || Array.isArray(params)) return undefined;
+  const value = (params as Record<string, unknown>)[key];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "boolean") {
+    throw new RpcHandlerError(
+      ErrorCode.INVALID_PARAMS,
+      `"${key}" must be a boolean when provided`,
     );
   }
   return value;
