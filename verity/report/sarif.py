@@ -47,10 +47,12 @@ _LEVEL_BY_PROVENANCE: dict[Provenance, str] = {
     Provenance.NEEDS_REVIEW: "note",
 }
 
-# Key name carries a version. When A7.1 lands and the signature scheme
-# changes, this becomes `/v2` and GitHub treats the alerts as new rather than
-# silently matching fingerprints computed two different ways.
-FINGERPRINT_KEY = "verityFindingSignature/v1"
+# Key name carries a version. A7.1 has landed: the signature now keys on the
+# normalised selector (validator 3.0.0), a different scheme from the 2.x
+# signature, so this is `/v2`. GitHub treats the two as unrelated fingerprints
+# rather than silently matching alerts computed two different ways — an alert
+# history built on v1 does not contaminate one built on v2.
+FINGERPRINT_KEY = "verityFindingSignature/v2"
 
 _WCAG_UNDERSTANDING = (
     "https://www.w3.org/WAI/WCAG22/Understanding/"

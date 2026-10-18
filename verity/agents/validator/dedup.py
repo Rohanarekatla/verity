@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from verity.models.schemas import Finding
+from verity.agents.validator.selectors import normalize_selector
 
 # The repo root, resolved from this file rather than the process cwd.
 # `verity scan` has to behave the same from any directory — a waiver that
@@ -23,20 +24,63 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_WAIVERS_PATH = _REPO_ROOT / "waivers.yaml"
 
 
-def generate_finding_signature(sc_id: str, selector: str, rule_id: str) -> str:
+def generate_finding_signature(
+    sc_id: str,
+    selector: str,
+    rule_id: str,
+    *,
+    region: str = "",
+) -> str:
     """
-    Deterministic identity for a finding: (success criterion, selector, rule).
+    Deterministic identity for a finding: (success criterion, normalised
+    selector or region, rule).
 
-    `rule_id` is the engine's own rule name, taken from `Finding.rule_id`.
-    It is not recovered from `Finding.id` by string-splitting: that made the
-    signature depend on the exact format of an unrelated field, so changing
-    how ids are built would silently invalidate every waiver in the file.
+    A7.1: the selector is run through `normalize_selector` so the signature
+    survives a code formatter and a class-name hasher — a raw axe selector
+    carries `Button__a1b2c3`-style hashes that churn every build, and keying
+    on them makes every waiver and baseline stop matching the morning after a
+    team runs their bundler.
+
+    A6.2: when the selector normalises to nothing stable (empty, or entirely
+    hashed away), fall back to a caller-supplied `region` identity rather than
+    collapsing every selector-less finding onto one key. An empty identity on
+    both would make two unrelated findings share a signature — and a waiver
+    for one silently suppress the other.
+
+    `rule_id` is the engine's own rule name, taken from `Finding.rule_id`. It
+    is not recovered from `Finding.id` by string-splitting: that made the
+    signature depend on the exact format of an unrelated field.
     """
-    # Normalize selector by collapsing whitespace
-    norm_selector = " ".join(selector.split()) if selector else "no-selector"
+    norm_selector = normalize_selector(selector)
+    identity = norm_selector or region or "no-selector"
 
-    signature_payload = f"{sc_id}|{norm_selector}|{rule_id}"
+    signature_payload = f"{sc_id}|{identity}|{rule_id}"
     return hashlib.sha256(signature_payload.encode("utf-8")).hexdigest()
+
+
+def region_identity(finding: Finding) -> str:
+    """
+    A6.2 — a stable fallback identity for a finding with no usable selector.
+
+    Built from the evidence that does not churn: the accessible name and the
+    rounded bounding box of the region, when present. This is deliberately
+    coarse; its only job is to keep two genuinely different selector-less
+    findings from colliding, not to be a precise locator.
+    """
+    ev = finding.evidence
+    parts: list[str] = []
+    name = (ev.computed_values or {}).get("accessible_name")
+    if isinstance(name, str) and name.strip():
+        parts.append(f"name={' '.join(name.split())}")
+    box = ev.region
+    if box is not None:
+        # Round to whole pixels: sub-pixel jitter from a re-render must not
+        # change identity.
+        parts.append(
+            "box=%d,%d,%d,%d"
+            % (round(box.x), round(box.y), round(box.width), round(box.height))
+        )
+    return "|".join(parts)
 
 
 def signature_for(finding: Finding) -> str:
@@ -45,6 +89,7 @@ def signature_for(finding: Finding) -> str:
         finding.sc.id,
         finding.evidence.dom_selector or "",
         finding.rule_id,
+        region=region_identity(finding),
     )
 
 

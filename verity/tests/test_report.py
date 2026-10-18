@@ -316,10 +316,11 @@ def test_fingerprint_matches_the_dedup_signature():
 
 def test_fingerprint_key_is_versioned():
     """
-    A7.1's stable-signature work will change the scheme. A versioned key
-    stops GitHub silently matching fingerprints computed two different ways.
+    A7.1's stable-signature work changed the scheme (validator 3.0.0), so the
+    key moved to /v2. A versioned key stops GitHub silently matching
+    fingerprints computed two different ways across that change.
     """
-    assert FINGERPRINT_KEY.endswith("/v1")
+    assert FINGERPRINT_KEY.endswith("/v2")
 
 
 def test_fingerprint_is_stable_across_runs():
