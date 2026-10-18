@@ -1,0 +1,23 @@
+<!doctype html>
+<!--
+  A9.4 fail fixture for data/apg-contracts/disclosure.yaml. A <div
+  role="button"> that only listens for mouse clicks: it is in the Tab
+  sequence, announces as a button, and Enter/Space do nothing. The runner must
+  fail `enter-toggles` and `space-toggles` (SC 2.1.1).
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>APG disclosure — fail</title></head>
+  <body>
+    <h2>FAQ</h2>
+    <div role="button" tabindex="0" id="faq-1" aria-expanded="false" aria-controls="faq-1-answer">What is Verity?</div>
+    <div id="faq-1-answer" hidden><p>An accessibility engine that refuses to guess.</p></div>
+    <script>
+      const btn = document.getElementById("faq-1");
+      btn.addEventListener("click", () => {
+        const open = btn.getAttribute("aria-expanded") !== "true";
+        btn.setAttribute("aria-expanded", String(open));
+        document.getElementById("faq-1-answer").hidden = !open;
+      });
+    </script>
+  </body>
+</html>

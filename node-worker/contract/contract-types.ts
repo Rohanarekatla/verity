@@ -61,6 +61,14 @@ export interface Evidence {
   computed_values?: Record<string, unknown>;
 }
 
+export interface ExerciseResult {
+  snapshots?: InteractionSnapshot[];
+  steps_requested: number;
+  steps_run: number;
+  complete: boolean;
+  incomplete_reason?: string | null;
+}
+
 export interface Finding {
   id: string;
   rule_id: string;
@@ -76,6 +84,19 @@ export interface Finding {
   evidence: Evidence;
   page_state_hash: string;
   waived?: boolean;
+}
+
+export interface InteractionSnapshot {
+  step_index: number;
+  active?: string | null;
+  states?: WidgetNode[];
+  missing?: string[];
+}
+
+export interface InteractionStep {
+  action: "focus" | "press";
+  target?: string | null;
+  key?: string | null;
 }
 
 export interface Latency {
@@ -170,4 +191,28 @@ export interface UnreachedRegion {
   selector: string;
   reason: UnreachedReason;
   detail?: string | null;
+}
+
+export interface Widget {
+  root: WidgetNode;
+  items?: WidgetNode[];
+  related?: WidgetNode[];
+  positive_tabindex_descendants?: string[];
+}
+
+export interface WidgetInventory {
+  widgets?: Widget[];
+  shadow_roots_skipped?: number;
+  iframes_skipped?: number;
+}
+
+export interface WidgetNode {
+  selector: string;
+  tag: string;
+  role?: string | null;
+  accessible_name?: string | null;
+  tabindex?: number | null;
+  attributes?: Record<string, unknown>;
+  hidden?: boolean;
+  disabled?: boolean;
 }
