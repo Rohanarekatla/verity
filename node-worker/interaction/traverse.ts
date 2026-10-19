@@ -22,6 +22,7 @@
  */
 
 import type { Page } from "playwright";
+import { decodePng } from "../static/png.js";
 
 /** Mirrors verity/models/schemas.py:UnreachedReason (the string values). */
 export type UnreachedReason =
@@ -395,29 +396,19 @@ async function confirmNoIndicatorByPixels(page: Page, selector: string): Promise
     const unfocused = await page.screenshot({ clip: box, animations: "disabled" });
     await page.evaluate((sel) => (document.querySelector(sel) as HTMLElement | null)?.focus({ preventScroll: true }), selector);
 
-    const changed = await page.evaluate(
-      async ({ a, b, tol }) => {
-        const load = async (b64: string) => {
-          const img = new Image();
-          img.src = "data:image/png;base64," + b64;
-          await img.decode();
-          const c = document.createElement("canvas");
-          c.width = img.naturalWidth;
-          c.height = img.naturalHeight;
-          const ctx = c.getContext("2d")!;
-          ctx.drawImage(img, 0, 0);
-          return ctx.getImageData(0, 0, c.width, c.height).data;
-        };
-        const [x, y] = await Promise.all([load(a), load(b)]);
-        if (x.length !== y.length) return -1;
-        let n = 0;
-        for (let i = 0; i < x.length; i += 4) {
-          if (Math.abs(x[i] - y[i]) > tol || Math.abs(x[i + 1] - y[i + 1]) > tol || Math.abs(x[i + 2] - y[i + 2]) > tol) n++;
-        }
-        return n;
-      },
-      { a: focused.toString("base64"), b: unfocused.toString("base64"), tol: INDICATOR_TOLERANCE },
-    );
+    // Decode and compare in Node: shipping pixel arrays out of the page as
+    // JSON was most of the cost.
+    const a = decodePng(focused);
+    const b = decodePng(unfocused);
+    let changed = -1;
+    if (a.data.length === b.data.length) {
+      changed = 0;
+      for (let i = 0; i < a.data.length; i += 4) {
+        if (Math.abs(a.data[i] - b.data[i]) > INDICATOR_TOLERANCE ||
+            Math.abs(a.data[i + 1] - b.data[i + 1]) > INDICATOR_TOLERANCE ||
+            Math.abs(a.data[i + 2] - b.data[i + 2]) > INDICATOR_TOLERANCE) changed++;
+      }
+    }
     if (changed < 0) return null;
     return changed >= INDICATOR_MIN_PIXELS;
   } catch {
