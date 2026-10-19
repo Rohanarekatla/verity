@@ -45,6 +45,7 @@
 
 import type { Page } from "playwright";
 import { waitUntilOpaque } from "../interaction/traverse.js";
+import { decodePng } from "./png.js";
 
 export interface Rgb {
   r: number;
@@ -192,7 +193,7 @@ function distance(a: Rgb, b: Rgb): number {
 interface Raster {
   width: number;
   height: number;
-  data: number[];
+  data: ArrayLike<number>;
 }
 
 interface Clip {
@@ -280,35 +281,18 @@ async function measureClip(
     .catch(() => null);
 }
 
-/** Screenshot a fixed region and decode its RGBA pixels. */
+/** Screenshot a fixed region and decode its RGBA pixels (in Node — see png.ts). */
 async function shoot(page: Page, clip: Clip & { fullPage: boolean }): Promise<Raster | null> {
-  let pngBase64: string;
   try {
     const { fullPage, x, y, width, height } = clip;
-    const region = { x, y, width, height };
     // Animations are NOT disabled: Playwright's "disabled" fast-forwards or
     // cancels them per shot, which hides real motion from the moving-page
     // guard (stripe.com's number ticker measured as if it stood still).
-    const buf = await page.screenshot({ type: "png", fullPage, clip: region });
-    pngBase64 = buf.toString("base64");
+    const buf = await page.screenshot({ type: "png", fullPage, clip: { x, y, width, height } });
+    return decodePng(buf);
   } catch {
     return null;
   }
-  return page
-    .evaluate(async (b64) => {
-      const img = new Image();
-      img.src = "data:image/png;base64," + b64;
-      await img.decode();
-      const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return null;
-      ctx.drawImage(img, 0, 0);
-      const d = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      return { width: canvas.width, height: canvas.height, data: Array.from(d.data) };
-    }, pngBase64)
-    .catch(() => null);
 }
 
 /**
@@ -334,7 +318,10 @@ async function setTextHidden(
         }
         if (hidden) el.setAttribute(attr, "");
         else el.removeAttribute(attr);
-        return new Promise<boolean>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))));
+        // No frame wait: a screenshot always renders the current style, and
+        // two animation frames per toggle (six toggles) were a third of the
+        // sampler's time.
+        return true;
       },
       {
         sel: selector,
@@ -428,7 +415,7 @@ function smallestFont(fonts: string[]): { size: number | null; weight: number | 
   return { size: parsed[0][0], weight: parsed[0][1], uniform: parsed.length === 1 && fonts.length === 1 };
 }
 
-function differs(a: number[], b: number[], i: number): boolean {
+function differs(a: ArrayLike<number>, b: ArrayLike<number>, i: number): boolean {
   return (
     Math.abs(a[i] - b[i]) > SAME_PIXEL_TOLERANCE ||
     Math.abs(a[i + 1] - b[i + 1]) > SAME_PIXEL_TOLERANCE ||
@@ -525,7 +512,7 @@ export async function sampleRegion(page: Page, selector: string): Promise<Region
   // Moving page: an image finishing loading, a carousel advancing, video. If
   // either pair of identical-state shots disagrees, nothing measured between
   // them can be trusted.
-  const changed = (x: number[], y: number[]) => {
+  const changed = (x: ArrayLike<number>, y: ArrayLike<number>) => {
     let k = 0;
     for (let p = 0; p < n; p++) if (differs(x, y, p * 4)) k++;
     return k > n * MAX_MOVING_FRACTION;
