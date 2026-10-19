@@ -29,3 +29,6 @@ eval/corpus/generated/
 
 # Spike A vision measurement outputs
 eval/vision/results.json
+
+# Benchmark tools and generated pages (eval/benchmark/benchmark.py)
+eval/benchmark/work/
