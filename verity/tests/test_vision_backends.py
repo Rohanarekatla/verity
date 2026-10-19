@@ -151,12 +151,12 @@ def test_env_mlx_selects_mlx_backend(monkeypatch):
 def test_mlx_backend_is_unavailable_without_the_package():
     """On a machine without mlx-vlm, the backend reports unavailable and abstains
     rather than crashing the import or the scan."""
+    import importlib.util
+
     b = MLXBackend("some/model")
-    try:
-        import mlx_vlm  # noqa: F401
-        installed = True
-    except ImportError:
-        installed = False
+    # find_spec, not import: importing mlx_vlm loads transformers, which hung
+    # this test for minutes on a machine that has it installed.
+    installed = importlib.util.find_spec("mlx_vlm") is not None
     if not installed:
         assert b.available() is False
         assert b.complete_json(system="s", user="u", images=["x.png"]) is None

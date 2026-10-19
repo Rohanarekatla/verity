@@ -46,7 +46,20 @@ const CONTAINER_ITEMS: Record<string, string[]> = {
 };
 
 const DEFAULT_MAX_STEPS = 40;
-const DEFAULT_MAX_MS = 10_000;
+const DEFAULT_MAX_MS = 20_000;
+// After a step, wait up to this long for ANY observable effect (focus moving,
+// a watched element's state or visibility changing) before concluding the
+// step did nothing. Real widgets act asynchronously: apple.com's bag button
+// sets aria-expanded after a fetch (~800 ms), its gallery tabs move focus
+// after a slide animation. Two animation frames — the old wait — reported
+// both as keys that do nothing. A step that works returns as soon as the
+// effect appears, so only genuinely inert keys pay the full wait.
+const EFFECT_WAIT_MS = 1_200;
+// Once something changed, let it finish (no further change for this long).
+const SETTLE_QUIET_MS = 150;
+const SETTLE_CAP_MS = 1_000;
+const POLL_MS = 50;
+const IDLE_PROBE_MS = 500;
 // Per-step ceiling. A key whose handler spins (or a focus() that never
 // settles) is cut off here rather than holding the worker until the RPC
 // timeout kills the whole call.
@@ -70,6 +83,13 @@ export async function exerciseWidget(page: Page, options: ExerciseOptions): Prom
   const started = Date.now();
   const startUrl = page.url();
 
+  // Idle probe: does the widget change with nobody touching it? An
+  // autoplaying gallery rotates its selected tab on a timer, and any effect
+  // seen after a key could be the timer's.
+  const idleBefore = await signature(page, watch);
+  await page.waitForTimeout(IDLE_PROBE_MS);
+  const selfChanging = (await signature(page, watch)) !== idleBefore;
+
   const snapshots: InteractionSnapshot[] = [await snapshot(page, -1, watch)];
   let stepsRun = 0;
   let incompleteReason: string | null = null;
@@ -85,6 +105,8 @@ export async function exerciseWidget(page: Page, options: ExerciseOptions): Prom
     }
 
     const step = steps[i];
+    const sig = (pg: Page) => (step.expect === "focus" ? focusSignature(pg) : signature(pg, watch));
+    const before = await sig(page);
     const ok = await withTimeout(runStep(page, step), STEP_TIMEOUT_MS);
     if (ok === "timeout") {
       incompleteReason = `step ${i} (${describeStep(step)}) did not settle within ${STEP_TIMEOUT_MS} ms`;
@@ -102,6 +124,11 @@ export async function exerciseWidget(page: Page, options: ExerciseOptions): Prom
       incompleteReason = `step ${i} (${describeStep(step)}) navigated away from the page`;
       break;
     }
+    await awaitEffect(page, sig, before);
+    if (page.url() !== startUrl) {
+      incompleteReason = `step ${i} (${describeStep(step)}) navigated away from the page`;
+      break;
+    }
     snapshots.push(await snapshot(page, i, watch));
   }
 
@@ -111,11 +138,12 @@ export async function exerciseWidget(page: Page, options: ExerciseOptions): Prom
     steps_run: stepsRun,
     complete: incompleteReason === null,
     incomplete_reason: incompleteReason,
+    self_changing: selfChanging,
   };
 }
 
 function describeStep(step: InteractionStep): string {
-  return step.action === "focus" ? `focus ${step.target}` : `press ${JSON.stringify(step.key)}`;
+  return step.action === "press" ? `press ${JSON.stringify(step.key)}` : `${step.action} ${step.target}`;
 }
 
 /** Run one step. Resolves false when the step could not be performed at all. */
@@ -130,6 +158,9 @@ async function runStep(page: Page, step: InteractionStep): Promise<boolean> {
         return document.activeElement === el;
       }, step.target);
       if (!focused) return false;
+    } else if (step.action === "click") {
+      if (!step.target) return false;
+      await page.locator(step.target).first().click({ timeout: STEP_TIMEOUT_MS });
     } else {
       if (!step.key) return false;
       await page.keyboard.press(step.key);
@@ -141,6 +172,55 @@ async function runStep(page: Page, step: InteractionStep): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+/** Everything a check could observe, as one comparable string. */
+async function signature(page: Page, watch: string[]): Promise<string> {
+  return page
+    .evaluate(snapshotInPage, watch)
+    .then((s) => JSON.stringify(s))
+    .catch(() => "");
+}
+
+/** Just where focus is — for steps whose expected effect is moving it. */
+async function focusSignature(page: Page): Promise<string> {
+  return page
+    .evaluate(() => {
+      const a = document.activeElement;
+      if (!a || a === document.body) return "";
+      const path: string[] = [];
+      for (let n: Element | null = a; n && n !== document.documentElement; n = n.parentElement) {
+        path.unshift(n.id ? `#${n.id}` : `${n.tagName}:${Array.from(n.parentElement?.children ?? []).indexOf(n)}`);
+        if (n.id) break;
+      }
+      return path.join(">");
+    })
+    .catch(() => "");
+}
+
+/**
+ * Wait for the step's effect: poll until the observable state differs from
+ * `before` (up to EFFECT_WAIT_MS), then until it stops changing (quiet for
+ * SETTLE_QUIET_MS, capped). Returns early in the common case.
+ */
+async function awaitEffect(page: Page, sig: (p: Page) => Promise<string>, before: string): Promise<void> {
+  const start = Date.now();
+  let current = await sig(page);
+  while (current === before && Date.now() - start < EFFECT_WAIT_MS) {
+    await page.waitForTimeout(POLL_MS);
+    current = await sig(page);
+  }
+  if (current === before) return;
+  const settleStart = Date.now();
+  let quietSince = Date.now();
+  while (Date.now() - quietSince < SETTLE_QUIET_MS && Date.now() - settleStart < SETTLE_CAP_MS) {
+    await page.waitForTimeout(POLL_MS);
+    const next = await sig(page);
+    if (next !== current) {
+      current = next;
+      quietSince = Date.now();
+    }
   }
 }
 

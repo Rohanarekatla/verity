@@ -304,14 +304,11 @@ def judge_focus_order(result: TraversalResult, page_state_hash: str) -> Finding:
             },
         )
 
-    unknown_tabindex = [s for s in result.stops if s.tabindex is None]
-    if unknown_tabindex:
-        return _finding(
-            "2.4.3", "indeterminate",
-            f"tabindex was not recorded for {len(unknown_tabindex)} stop(s); "
-            "focus order could not be assessed.",
-            page_state_hash=page_state_hash,
-        )
+    # `tabindex is None` is NOT "unrecorded": per the TabStop contract (and
+    # traverse.ts) it is the authored attribute, None when ABSENT — a plain
+    # <button> or <a href>, the most common stop there is. Treating it as
+    # unknown made SC 2.4.3 needs-review on every real page (gov.uk: "176
+    # stops not recorded"). Absent is simply not positive.
 
     if not result.complete:
         return _finding(

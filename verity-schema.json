@@ -307,6 +307,11 @@
           ],
           "default": null,
           "title": "Incomplete Reason"
+        },
+        "self_changing": {
+          "default": false,
+          "title": "Self Changing",
+          "type": "boolean"
         }
       },
       "required": [
@@ -458,7 +463,8 @@
         "action": {
           "enum": [
             "focus",
-            "press"
+            "press",
+            "click"
           ],
           "title": "Action",
           "type": "string"
@@ -486,6 +492,19 @@
           ],
           "default": null,
           "title": "Key"
+        },
+        "expect": {
+          "anyOf": [
+            {
+              "const": "focus",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expect"
         }
       },
       "required": [
@@ -660,6 +679,11 @@
         "font_uniform": {
           "default": false,
           "title": "Font Uniform",
+          "type": "boolean"
+        },
+        "aria_hidden": {
+          "default": false,
+          "title": "Aria Hidden",
           "type": "boolean"
         }
       },

@@ -224,12 +224,12 @@ export function registerHandlers(dispatcher: Dispatcher): void {
       for (const s of steps) {
         const ok =
           typeof s === "object" && s !== null &&
-          ((s.action === "focus" && typeof s.target === "string") ||
+          (((s.action === "focus" || s.action === "click") && typeof s.target === "string") ||
             (s.action === "press" && typeof s.key === "string"));
         if (!ok) {
           throw new RpcHandlerError(
             ErrorCode.INVALID_PARAMS,
-            `each step must be {action:"focus",target} or {action:"press",key}; got ${JSON.stringify(s)}`,
+            `each step must be {action:"focus"|"click",target} or {action:"press",key}; got ${JSON.stringify(s)}`,
           );
         }
       }

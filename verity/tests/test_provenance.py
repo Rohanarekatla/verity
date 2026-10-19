@@ -212,6 +212,7 @@ def test_adjudicated_contrast_findings_are_coherent():
             foreground=Rgb(r=255, g=255, b=255) if expected == "pass" else Rgb(r=0x80, g=0x80, b=0x80),
             device_pixel_ratio=2.0,
             background_samples=[BackgroundSample(r=bg[0], g=bg[1], b=bg[2], count=10)],
+            text_pixel_count=40,  # glyphs were found (0 would mean "colour not on screen")
             sampled=True,
             ambiguous=False,
         )
