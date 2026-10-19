@@ -1,0 +1,53 @@
+<!doctype html>
+<!--
+  A9.4 pass fixture for data/apg-contracts/dialog.yaml (Track B, Week 9).
+  The APG modal dialog, reached from a trigger that declares it:
+  aria-haspopup="dialog" + aria-controls. Enter/Space/click open it and move
+  focus to the first field; Tab and Shift+Tab wrap inside it; Escape closes
+  it and returns focus to the trigger.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>APG dialog — pass</title>
+    <style>
+      [role="dialog"] { position: fixed; inset: 20% 30%; background: #fff; border: 2px solid #000; padding: 1em; }
+    </style>
+  </head>
+  <body>
+    <button id="before">Before the widget</button>
+    <button id="open-address" aria-haspopup="dialog" aria-controls="address-dialog">Add delivery address</button>
+    <div role="dialog" id="address-dialog" aria-modal="true" aria-labelledby="address-title" hidden>
+      <h2 id="address-title">Delivery address</h2>
+      <label for="street">Street</label>
+      <input id="street" type="text" />
+      <button id="save">Save</button>
+      <button id="cancel">Cancel</button>
+    </div>
+    <button id="after">After the widget</button>
+    <script>
+      const trigger = document.getElementById("open-address");
+      const dialog = document.getElementById("address-dialog");
+      const focusables = () => [...dialog.querySelectorAll("input, button")];
+      function open() {
+        dialog.hidden = false;
+        focusables()[0].focus();
+      }
+      function close() {
+        dialog.hidden = true;
+        trigger.focus();
+      }
+      trigger.addEventListener("click", () => (dialog.hidden ? open() : close()));
+      document.getElementById("save").addEventListener("click", close);
+      document.getElementById("cancel").addEventListener("click", close);
+      dialog.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") { e.preventDefault(); close(); return; }
+        if (e.key !== "Tab") return;
+        const f = focusables();
+        const i = f.indexOf(document.activeElement);
+        e.preventDefault();
+        f[(i + (e.shiftKey ? -1 : 1) + f.length) % f.length].focus();
+      });
+    </script>
+  </body>
+</html>

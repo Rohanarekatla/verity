@@ -1,0 +1,37 @@
+<!doctype html>
+<!--
+  A9.4 fail fixture for data/apg-contracts/dialog.yaml (Track B, Week 9).
+  The commonest modal-dialog bug: the dialog opens (Enter, Space and click
+  all work), but focus is left on the trigger behind it. The runner must fail
+  `focus-moves-into-dialog`. Tab containment and Escape are cantTell, because
+  their precondition — focus inside an open dialog — is never reached.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>APG dialog — fail</title>
+    <style>
+      [role="dialog"] { position: fixed; inset: 20% 30%; background: #fff; border: 2px solid #000; padding: 1em; }
+    </style>
+  </head>
+  <body>
+    <button id="before">Before the widget</button>
+    <button id="open-address" aria-haspopup="dialog" aria-controls="address-dialog">Add delivery address</button>
+    <div role="dialog" id="address-dialog" aria-modal="true" aria-labelledby="address-title" hidden>
+      <h2 id="address-title">Delivery address</h2>
+      <label for="street">Street</label>
+      <input id="street" type="text" />
+      <button id="save">Save</button>
+      <button id="cancel">Cancel</button>
+    </div>
+    <button id="after">After the widget</button>
+    <script>
+      const trigger = document.getElementById("open-address");
+      const dialog = document.getElementById("address-dialog");
+      // Opens, but never moves focus — and the trigger toggles it closed again.
+      trigger.addEventListener("click", () => { dialog.hidden = !dialog.hidden; });
+      document.getElementById("save").addEventListener("click", () => { dialog.hidden = true; });
+      document.getElementById("cancel").addEventListener("click", () => { dialog.hidden = true; });
+    </script>
+  </body>
+</html>

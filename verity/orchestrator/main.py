@@ -301,7 +301,31 @@ async def _run_apg_contracts(
             exc.__class__.__name__,
         )
         return []
-    findings = to_findings(run, page_state_hash)
+
+    # Mapping is guarded separately, and more loudly, than the worker call.
+    #
+    # `to_findings` builds Finding objects, and B6.2's validator rejects any
+    # incoherent provenance/outcome pair outright. Unguarded, one such finding
+    # would propagate out of scan_url and end the whole scan with exit 2 —
+    # throwing away every axe, contrast and keyboard verdict on the page
+    # because of a defect in one stage. That is the Week 2 "one odd axe item
+    # kills the scan" bug in a new place, so it gets the same answer: lose
+    # this stage, keep the report.
+    #
+    # Unlike a missing worker method, this IS a bug in our code, so it is
+    # logged at WARNING with the error — dropped, but never silent.
+    try:
+        findings = to_findings(run, page_state_hash)
+    except Exception as exc:
+        logger.warning(
+            "APG contract results could not be mapped to findings (%s: %s); "
+            "dropping interaction findings for this page. This is a defect in "
+            "verity.agents.interaction, not in the page.",
+            exc.__class__.__name__,
+            exc,
+        )
+        return []
+
     logger.info(
         "APG contracts: %s widget(s) matched, %d finding(s).",
         sum(run.widgets_matched.values()),
@@ -467,7 +491,9 @@ async def scan_url(
             await _run_apg_contracts(rpc_call, artifact_id, content_hash)
         )
 
-        # Step 3.5: Deduplicate and apply waivers
+        # Step 3.9: Deduplicate and apply waivers. After every agent has
+        # contributed (axe, contrast, keyboard, APG), so one dedup pass sees
+        # them all.
         findings = process_findings(findings)
 
         # Step 4: Build Conformance Map

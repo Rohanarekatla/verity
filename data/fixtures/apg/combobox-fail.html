@@ -1,0 +1,40 @@
+<!doctype html>
+<!--
+  A9.4 fail fixture for data/apg-contracts/combobox.yaml (Track B, Week 9).
+  A custom select-only combobox that a mouse user cannot tell apart from a
+  good one: it is focusable, named, and keeps aria-expanded in step. But it
+  opens on click only — ArrowDown and Alt+ArrowDown do nothing — so a
+  keyboard user can never choose a value. The runner must fail
+  `keyboard-opens-popup`; the option checks are cantTell, because the
+  keyboard never opened the listbox.
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>APG combobox — fail</title></head>
+  <body>
+    <button id="before">Before the widget</button>
+    <span id="fruit-label">Favourite fruit</span>
+    <div id="fruit" role="combobox" tabindex="0" aria-labelledby="fruit-label"
+         aria-haspopup="listbox" aria-expanded="false" aria-controls="fruit-listbox">Apple</div>
+    <ul id="fruit-listbox" role="listbox" aria-labelledby="fruit-label" hidden>
+      <li role="option" id="fruit-1" aria-selected="true">Apple</li>
+      <li role="option" id="fruit-2">Banana</li>
+      <li role="option" id="fruit-3">Cherry</li>
+    </ul>
+    <button id="after">After the widget</button>
+    <script>
+      const combo = document.getElementById("fruit");
+      const listbox = document.getElementById("fruit-listbox");
+      combo.addEventListener("click", () => {
+        listbox.hidden = !listbox.hidden;
+        combo.setAttribute("aria-expanded", String(!listbox.hidden));
+      });
+      for (const o of listbox.querySelectorAll('[role="option"]')) {
+        o.addEventListener("click", () => {
+          combo.textContent = o.textContent;
+          listbox.hidden = true;
+          combo.setAttribute("aria-expanded", "false");
+        });
+      }
+    </script>
+  </body>
+</html>

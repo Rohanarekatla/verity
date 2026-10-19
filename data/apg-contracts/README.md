@@ -11,9 +11,13 @@ runner in `verity/agents/interaction.py` (A9.1).
 | `tablist.yaml` | Track B (Week 4) | `apg/tablist-pass.html` / `apg/tablist-fail.html` |
 | `disclosure.yaml` | Track A (Week 9) | `apg/disclosure-pass.html` / `apg/disclosure-fail.html` |
 | `menu-button.yaml` | Track A (Week 9) | `apg/menu-button-pass.html` / `apg/menu-button-fail.html` |
+| `dialog.yaml` | Track B (Week 9) | `apg/dialog-pass.html` / `apg/dialog-fail.html` |
+| `combobox.yaml` | Track B (Week 9) | `apg/combobox-pass.html` / `apg/combobox-fail.html` |
 
-Week 9 asks for five; the remaining two (dialog, combobox) are Track B's half
-and the joint fifth.
+Those are Week 9's five. Track B's two need two small runner/worker hooks:
+`PatternChecks.watch` (extra selectors to snapshot — a popup by id, or
+`#dlg:focus-within`) and a `combobox` branch plus `listbox` in the worker's
+`CONTAINER_ITEMS`, so a combobox's options are inventoried.
 
 ## Adding a contract
 

@@ -52,9 +52,17 @@ def report_expired_waivers(waivers_path: Optional[str] = None) -> list[str]:
     them somewhere else (a PR annotation, Week 8's SARIF) without re-reading
     the file.
 
-    A waiver file that is itself broken is also surfaced here rather than
-    swallowed: if we cannot tell which findings are suppressed, continuing as
-    though none were would be a guess about someone's accessibility policy.
+    A waiver file that is itself broken is surfaced here, then **re-raised**.
+    If we cannot tell which findings are suppressed, we have no trustworthy
+    verdict at all — that is a scan that could not complete (exit 2), not a
+    page with gating failures (exit 1). Returning it as an ordinary "expired
+    waiver" used to map it to exit 1, telling CI the *site* was inaccessible
+    when the real problem was our own config.
+
+    That branch was unreachable from `run_cli_scan` (the scan loads the same
+    file first and raises), but only by accident of call order. Re-raising
+    makes the doctrine hold wherever this is called — including the obvious
+    refactor of checking config *before* a 2-minute render.
     """
     from verity.agents.validator.waivers import (
         WaiverFileError,
@@ -70,7 +78,7 @@ def report_expired_waivers(waivers_path: Optional[str] = None) -> list[str]:
         for line in str(exc).splitlines():
             print(f"  {line}")
         print()
-        return [f"waiver file invalid: {exc}"]
+        raise
 
     expired = expired_waivers(waivers)
     if expired:
@@ -131,15 +139,21 @@ async def run_cli_scan(
     junit_path: Optional[str] = None,
     config_path: Optional[str] = None,
     write_baseline_path: Optional[str] = None,
+    baseline_path: Optional[str] = None,
 ) -> int:
     """Runs the scan orchestrator and saves/prints output."""
     from verity.report.policy import load_policy
+    from verity.report.regression import gate_against_baseline, open_baseline
 
     try:
         # B8.4 — the gating policy is loaded before the scan, so a bad `ci:`
         # block fails immediately rather than after a 30-second render.
         policy = load_policy(config_path)
         logger.info("CI policy: %s", policy.describe())
+
+        # B7.4 — same reasoning: a missing or hand-edited baseline is a config
+        # error, surfaced before the render (exit 2), not after it.
+        baseline = open_baseline(baseline_path)
 
         url = normalize_target(url)
         logger.info(f"Starting scan for URL: {url}")
@@ -188,13 +202,13 @@ async def run_cli_scan(
         if write_baseline_path:
             from verity.report.baseline import build_baseline, write_baseline
 
-            baseline = build_baseline(report)
-            write_baseline(baseline, Path(write_baseline_path))
+            recorded = build_baseline(report)
+            write_baseline(recorded, Path(write_baseline_path))
             logger.info(
                 "Baseline written to %s (%d finding(s), id %s)",
                 write_baseline_path,
-                len(baseline.entries),
-                baseline.baseline_id[:12],
+                len(recorded.entries),
+                recorded.baseline_id[:12],
             )
 
         # B7.3 — an expired waiver fails CI, by name.
@@ -216,19 +230,35 @@ async def run_cli_scan(
         # without ever breaking a build. A team can widen or disable it via
         # `ci:` in their config, which is how report-only adoption works on
         # day one.
-        gating = policy.gating_findings(report.findings)
+        #
+        # B7.4 — with a baseline, only findings *absent from it* can gate:
+        # one new defect fails the build on exactly that one, not on the
+        # fifty already accepted. An incompatible baseline raises (exit 2).
+        if baseline is not None:
+            from verity.report.baseline import format_diff
+
+            result = gate_against_baseline(baseline, report, policy)
+            print(format_diff(result.diff) + "\n")
+            logger.info("Regression gate keyed to %s", result.key.describe())
+            gating = result.gating
+        else:
+            gating = policy.gating_findings(report.findings)
         if gating:
             logger.info(
-                "%d gating finding(s) under %s — failing with exit code 1.",
+                "%d gating finding(s) under %s — failing with exit code %d.",
                 len(gating),
                 policy.describe(),
+                EXIT_GATING_FINDINGS,
             )
-            return 1
+            return EXIT_GATING_FINDINGS
 
+        # An expired waiver is a valid file whose decision has lapsed: the
+        # team must act, so it gates. A *broken* waiver file never reaches
+        # here — it raises and exits EXIT_SCAN_ERROR above.
         if expiry_failures:
-            return 1
+            return EXIT_GATING_FINDINGS
 
-        return 0
+        return EXIT_OK
 
     except Exception as exc:
         logger.error(
@@ -302,6 +332,14 @@ def main() -> None:
         metavar="PATH",
         help="Write a content-addressed baseline of this scan's findings",
     )
+    # B7.4 — gate only on findings that are new relative to a baseline.
+    scan_parser.add_argument(
+        "--baseline",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Fail only on findings absent from this baseline (see --write-baseline)",
+    )
 
     args = parser.parse_args()
 
@@ -317,6 +355,7 @@ def main() -> None:
                 junit_path=args.junit,
                 config_path=args.config,
                 write_baseline_path=args.write_baseline,
+                baseline_path=args.baseline,
             )
         )
         sys.exit(exit_code)

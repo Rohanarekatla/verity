@@ -1,0 +1,45 @@
+<!doctype html>
+<!--
+  B9.1 / B9.3 fixture (Track B, Week 9): names the in-page guess gets wrong
+  and the browser's accessible-name computation gets right.
+
+  #shadow-toggle  a disclosure whose label lives in its SHADOW ROOT. Its
+                  light-DOM textContent is empty, so the in-page guess says
+                  "no name"; the browser computes "Show shipping details".
+  #icon-toggle    a disclosure whose only content is <img alt="Settings">.
+                  textContent is empty; the name comes from alt.
+  #hidden-child   a disclosure with an aria-hidden decoration. textContent
+                  would include the "▼"; the spec excludes it.
+  #state          a combobox named only by <label for>.
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>accname — shadow DOM and friends</title></head>
+  <body>
+    <x-toggle id="shadow-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="p1"></x-toggle>
+    <div id="p1" hidden>Ships in 2 days.</div>
+
+    <button id="icon-toggle" aria-expanded="false" aria-controls="p2">
+      <img alt="Settings" width="16" height="16"
+           src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==" />
+    </button>
+    <div id="p2" hidden>Settings panel.</div>
+
+    <button id="hidden-child" aria-expanded="false" aria-controls="p3">More<span aria-hidden="true"> ▼</span></button>
+    <div id="p3" hidden>More content.</div>
+
+    <label for="state">State</label>
+    <input id="state" type="text" role="combobox" aria-expanded="false" aria-controls="state-listbox" />
+    <ul id="state-listbox" role="listbox" aria-label="States" hidden>
+      <li role="option" id="opt-1">Alabama</li>
+    </ul>
+
+    <script>
+      customElements.define("x-toggle", class extends HTMLElement {
+        constructor() {
+          super();
+          this.attachShadow({ mode: "open" }).innerHTML = "<span>Show shipping details</span>";
+        }
+      });
+    </script>
+  </body>
+</html>

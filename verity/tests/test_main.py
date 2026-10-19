@@ -440,3 +440,63 @@ async def test_worker_without_sampleRegion_falls_back_to_needs_review():
     assert finding.provenance is Provenance.NEEDS_REVIEW
     assert finding.outcome == "cantTell"
     assert finding.confidence.method == "axe-incomplete"
+
+
+@pytest.mark.asyncio
+async def test_a_defect_in_one_agent_does_not_take_down_the_whole_scan(monkeypatch, caplog):
+    """
+    If the APG contract stage builds an incoherent Finding, B6.2's validator
+    rejects it. Unguarded, that ValidationError escaped scan_url, the CLI
+    exited 2, and every axe, contrast and keyboard verdict on the page was
+    lost because of one stage's bug. The stage must be dropped, the rest of
+    the report kept — and the defect logged at WARNING, never swallowed.
+    """
+    import logging
+    from verity.agents import interaction
+
+    def broken_to_findings(run, page_state_hash):
+        raise ValueError("AUTHORITATIVE findings must be decided")
+
+    async def fake_run(rpc_call, artifact_id):
+        class _Run:
+            widgets_matched = {"tablist": 1}
+        return _Run()
+
+    monkeypatch.setattr(interaction, "to_findings", broken_to_findings)
+    monkeypatch.setattr(interaction, "run_contracts_on_artifact", fake_run)
+
+    script = (
+        "import sys, json\n"
+        "while True:\n"
+        "    line = sys.stdin.readline()\n"
+        "    if not line: break\n"
+        "    req = json.loads(line)\n"
+        "    m = req.get('method')\n"
+        "    if m == 'render':\n"
+        "        r = {'artifactId': 'a1', 'page_state': {'content_hash': 'abc'}}\n"
+        "    elif m == 'runAxe':\n"
+        "        r = {'violations': [{'id': 'image-alt', 'tags': ['wcag111'],"
+        "             'help': 'Alt', 'impact': 'critical', 'selector': 'img#hero'}],"
+        "             'incomplete': []}\n"
+        "    else:\n"
+        "        r = {}\n"
+        "    print(json.dumps({'jsonrpc': '2.0', 'id': req['id'], 'result': r}))\n"
+        "    sys.stdout.flush()\n"
+    )
+
+    with caplog.at_level(logging.WARNING, logger="verity.orchestrator.main"):
+        report = await scan_url(
+            "https://example.com",
+            node_worker_command=[sys.executable, "-c", script],
+            timeout=5.0,
+        )
+
+    # The scan completed and kept the axe finding.
+    assert any(f.sc.id == "1.1.1" for f in report.findings), (
+        "the axe finding was lost because a different stage failed"
+    )
+    # And the defect was made visible, not silently swallowed.
+    assert any(
+        "could not be mapped" in r.getMessage() and r.levelno == logging.WARNING
+        for r in caplog.records
+    ), "a mapping defect must be logged at WARNING"

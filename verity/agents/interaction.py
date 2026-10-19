@@ -242,6 +242,10 @@ class PatternChecks:
     """
     plan: Callable[[Widget], list[InteractionStep]]
     evaluate: Callable[[Widget, Optional[ExerciseResult]], dict[str, Verdict]]
+    # Extra selectors to snapshot beyond the widget's own nodes (Week 9,
+    # Track B): a popup that only exists once opened (`[id="lb"]`), or
+    # `#dlg:focus-within`, whose presence in `missing` says focus left it.
+    watch: Optional[Callable[[Widget], list[str]]] = None
 
 
 def _press(key: str) -> InteractionStep:
@@ -715,20 +719,392 @@ def _menu_button_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict
     return v
 
 
+# dialog (Track B, Week 9) ---------------------------------------------------
+#
+# Matched on the trigger (aria-haspopup="dialog"), because a closed dialog is
+# not rendered and only the author's declaration says which button opens it.
+# See data/apg-contracts/dialog.yaml for why each check is what it is.
+
+_DIALOG_ROLES = ("dialog", "alertdialog")
+
+
+def _is_dialog(node: Optional[WidgetNode]) -> bool:
+    return node is not None and (node.role in _DIALOG_ROLES or node.tag == "dialog")
+
+
+def _focus_within(selector: str) -> str:
+    return f"{selector}:focus-within"
+
+
+def _dialog_watch(widget: Widget) -> list[str]:
+    d = _controlled(widget)
+    return [_focus_within(d.selector)] if _is_dialog(d) else []
+
+
+def _dialog_plan(widget: Widget) -> list[InteractionStep]:
+    if not _is_dialog(_controlled(widget)):
+        return []
+    root = widget.root.selector
+    return [
+        _focus(root),         # 0
+        _press("Enter"),      # 1  enter-opens-dialog, focus-moves-into-dialog
+        _move("Tab"),         # 2  tab-stays-in-modal-dialog
+        _move("Tab"),         # 3
+        _move("Tab"),         # 4
+        _move("Shift+Tab"),   # 5
+        _press("Escape"),     # 6  escape-closes-dialog, focus-returns-to-trigger
+        _focus(root),         # 7
+        _press(" "),          # 8  space-opens-dialog
+        _press("Escape"),     # 9
+        _click(root),         # 10 keyboard parity: does a click open it?
+        _press("Escape"),     # 11
+    ]
+
+
+def _dialog_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict[str, Verdict]:
+    root = widget.root
+    v: dict[str, Verdict] = {}
+    v["trigger-has-accessible-name"] = (
+        ("pass", f"named {root.accessible_name!r}") if _named(root)
+        else ("fail", "the dialog trigger has no accessible name")
+    )
+    v["trigger-in-tab-sequence"] = _tab_sequence_verdict(widget)
+
+    ids = _ids(root.attributes.get("aria-controls"))
+    dialog = _controlled(widget)
+    if not ids:
+        v["controls-a-dialog"] = ("cantTell", "no aria-controls; the dialog cannot be located")
+    elif dialog is None:
+        v["controls-a-dialog"] = ("fail", f"aria-controls={ids[0]!r} references nothing")
+    elif not _is_dialog(dialog):
+        v["controls-a-dialog"] = ("fail", f"aria-controls target is <{dialog.tag}> role={dialog.role!r}, not a dialog")
+    else:
+        v["controls-a-dialog"] = ("pass", f"controls {dialog.selector}")
+
+    dependent = ["dialog-has-accessible-name", "dialog-hidden-initially", "enter-opens-dialog",
+                 "space-opens-dialog", "focus-moves-into-dialog", "tab-stays-in-modal-dialog",
+                 "escape-closes-dialog", "focus-returns-to-trigger"]
+    if not _is_dialog(dialog):
+        for a in dependent:
+            v[a] = ("cantTell", "no dialog could be located from aria-controls")
+        return v
+    assert dialog is not None
+
+    if (dialog.attributes.get("aria-label") or "").strip():
+        v["dialog-has-accessible-name"] = ("pass", "named by aria-label")
+    elif _ids(dialog.attributes.get("aria-labelledby")) and _named(dialog):
+        v["dialog-has-accessible-name"] = ("pass", f"named by aria-labelledby: {dialog.accessible_name!r}")
+    else:
+        v["dialog-has-accessible-name"] = ("fail", "the dialog has neither aria-label nor a resolvable aria-labelledby")
+    v["dialog-hidden-initially"] = (
+        ("pass", "the dialog is not displayed before interaction") if dialog.hidden
+        else ("fail", "the dialog is displayed before any interaction")
+    )
+
+    fw = _focus_within(dialog.selector)
+
+    def is_open(snap: Optional[InteractionSnapshot]) -> Optional[bool]:
+        node = _state(snap, dialog.selector)
+        return None if node is None else not node.hidden
+
+    def inside(snap: Optional[InteractionSnapshot]) -> bool:
+        return snap is not None and fw not in snap.missing
+
+    s = {k: _after(run, k) for k in range(-1, 12)}
+
+    enter_ready = (s[0] is not None and s[1] is not None
+                   and s[0].active == root.selector and is_open(s[0]) is False)
+    enter_opens = enter_ready and bool(is_open(s[1]))
+    space_ready = (s[7] is not None and s[8] is not None
+                   and s[7].active == root.selector and is_open(s[7]) is False)
+    space_opens = space_ready and bool(is_open(s[8]))
+    click_opens: Optional[bool] = (
+        None if s[9] is None or s[10] is None or is_open(s[9]) is not False else bool(is_open(s[10]))
+    )
+
+    if s[0] is None or s[1] is None:
+        v["enter-opens-dialog"] = ("cantTell", _missing_snapshot(run))
+    elif not enter_ready:
+        v["enter-opens-dialog"] = ("cantTell", "precondition not met: trigger focused with the dialog closed")
+    else:
+        # The other key only counts as evidence if its own precondition held.
+        v["enter-opens-dialog"] = _key_parity("Enter", enter_opens, "Space", space_opens,
+                                              click_opens if space_ready else None, "open the dialog")
+
+    if s[7] is None or s[8] is None:
+        v["space-opens-dialog"] = ("cantTell", _missing_snapshot(run))
+    elif not space_ready:
+        v["space-opens-dialog"] = ("cantTell", "precondition not met: trigger focused with the dialog closed")
+    else:
+        v["space-opens-dialog"] = _key_parity("Space", space_opens, "Enter", enter_opens,
+                                              click_opens if enter_ready else None, "open the dialog")
+
+    opened = s[1] if enter_opens else s[8] if space_opens else None
+    if opened is None:
+        v["focus-moves-into-dialog"] = ("cantTell", "the keyboard never opened the dialog")
+    elif inside(opened):
+        v["focus-moves-into-dialog"] = ("pass", f"focus moved into the dialog ({opened.active})")
+    elif opened.active is None:
+        v["focus-moves-into-dialog"] = ("cantTell", "after opening, focus is on no element (the page body)")
+    else:
+        v["focus-moves-into-dialog"] = (
+            "fail", f"the dialog opened but focus stayed outside it, on {opened.active}")
+
+    modal = dialog.attributes.get("aria-modal") == "true"
+    if not (enter_opens and inside(s[1])):
+        v["tab-stays-in-modal-dialog"] = ("cantTell", "precondition not met: Enter opened the dialog with focus inside")
+    elif not modal:
+        v["tab-stays-in-modal-dialog"] = ("cantTell", "the dialog does not declare aria-modal=\"true\"; "
+                                                      "a non-modal dialog may let Tab leave")
+    else:
+        escaped: list[str] = []
+        verdict: Optional[Verdict] = None
+        for k in (2, 3, 4, 5):
+            snap = s[k]
+            if snap is None:
+                verdict = ("cantTell", _missing_snapshot(run))
+                break
+            if not is_open(snap):
+                verdict = ("cantTell", f"the dialog closed after step {k}; containment could not be judged")
+                break
+            # active None = the browser's own UI, not the obscured page.
+            if snap.active is not None and not inside(snap):
+                escaped.append(f"step {k} -> {snap.active}")
+        if escaped:
+            v["tab-stays-in-modal-dialog"] = ("fail", f"Tab moved focus out of the modal dialog: {'; '.join(escaped)}")
+        elif verdict is not None:
+            v["tab-stays-in-modal-dialog"] = verdict
+        else:
+            v["tab-stays-in-modal-dialog"] = ("pass", "Tab and Shift+Tab stayed inside the dialog")
+
+    if s[5] is None or s[6] is None:
+        v["escape-closes-dialog"] = ("cantTell", _missing_snapshot(run))
+        v["focus-returns-to-trigger"] = ("cantTell", _missing_snapshot(run))
+    elif not (is_open(s[5]) and inside(s[5])):
+        why = "precondition not met: dialog open with focus inside before Escape"
+        v["escape-closes-dialog"] = ("cantTell", why)
+        v["focus-returns-to-trigger"] = ("cantTell", why)
+    elif is_open(s[6]) is not False:
+        v["escape-closes-dialog"] = ("fail", "Escape did not hide the dialog")
+        v["focus-returns-to-trigger"] = ("cantTell", "Escape did not close the dialog")
+    else:
+        v["escape-closes-dialog"] = ("pass", "Escape hid the dialog")
+        v["focus-returns-to-trigger"] = (
+            ("pass", "focus returned to the trigger") if s[6].active == root.selector
+            else ("fail", f"after closing, focus is on {s[6].active or 'the page'}, not the trigger")
+        )
+    return v
+
+
+# combobox (Track B, Week 9) -------------------------------------------------
+#
+# DOM focus stays on the combobox; arrows move a virtual focus announced via
+# aria-activedescendant. See data/apg-contracts/combobox.yaml.
+
+_POPUP_ROLES = ("listbox", "grid", "tree", "dialog")
+
+
+def _popup_id(widget: Widget) -> Optional[str]:
+    ids = _ids(widget.root.attributes.get("aria-controls")) or _ids(widget.root.attributes.get("aria-owns"))
+    return ids[0] if ids else None
+
+
+def _node_by_id(snap: Optional[InteractionSnapshot], element_id: str) -> Optional[WidgetNode]:
+    if snap is None:
+        return None
+    for n in snap.states:
+        if n.attributes.get("id") == element_id:
+            return n
+    return None
+
+
+def _combobox_watch(widget: Widget) -> list[str]:
+    # The popup may not exist at inventory time (rendered on open), so watch
+    # it by id rather than by an inventory selector.
+    pid = _popup_id(widget)
+    return [f'[id="{pid}"]'] if pid and '"' not in pid and "\\" not in pid else []
+
+
+def _combobox_plan(widget: Widget) -> list[InteractionStep]:
+    root = widget.root.selector
+    return [
+        _focus(root),              # 0
+        _press("ArrowDown"),       # 1  keyboard-opens-popup, arrow-keys-reach-options
+        _press("ArrowDown"),       # 2
+        _press("Escape"),          # 3  escape-closes-popup
+        _focus(root),              # 4
+        _press("Alt+ArrowDown"),   # 5  keyboard-opens-popup (alternative key)
+        _press("Escape"),          # 6
+        _click(root),              # 7  keyboard parity: does a click open it?
+        _press("Escape"),          # 8
+    ]
+
+
+def _combobox_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict[str, Verdict]:
+    root, options = widget.root, widget.items
+    v: dict[str, Verdict] = {}
+    v["combobox-has-accessible-name"] = (
+        ("pass", f"named {root.accessible_name!r}") if _named(root)
+        else ("fail", "the combobox has no accessible name")
+    )
+    exp = root.attributes.get("aria-expanded")
+    if exp in ("true", "false"):
+        v["aria-expanded-is-boolean"] = ("pass", f"aria-expanded={exp}")
+    elif exp is None:
+        v["aria-expanded-is-boolean"] = (
+            "fail", "aria-expanded is absent (ARIA 1.2 requires it on combobox; default false)", APG_ONLY)
+    else:
+        v["aria-expanded-is-boolean"] = ("fail", f"aria-expanded={exp!r} is not 'true' or 'false'")
+
+    if not options:
+        v["options-have-names"] = ("cantTell", "no options in the DOM at scan time")
+    else:
+        nameless = [o.selector for o in options if not _named(o)]
+        v["options-have-names"] = (
+            ("fail", f"no accessible name: {', '.join(nameless)}") if nameless else ("pass", "every option is named")
+        )
+
+    pid = _popup_id(widget)
+    at_load = _related_by_id(widget, pid) if pid else None
+    if pid is None:
+        v["popup-hidden-initially"] = ("cantTell", "no aria-controls or aria-owns; the popup cannot be located")
+    elif at_load is None or at_load.hidden:
+        v["popup-hidden-initially"] = ("pass", "the popup is not displayed before interaction")
+    else:
+        v["popup-hidden-initially"] = ("fail", "the popup is displayed before any interaction")
+
+    def is_open(snap: Optional[InteractionSnapshot]) -> Optional[bool]:
+        if snap is None or pid is None or not snap.states:
+            return None
+        node = _node_by_id(snap, pid)
+        return False if node is None else not node.hidden
+
+    def root_now(snap: Optional[InteractionSnapshot]) -> WidgetNode:
+        return _state(snap, root.selector) or root
+
+    s = [_after(run, k) for k in range(9)]
+    snaps = [x for x in [_after(run, -1), *s] if x is not None]
+
+    resolved: Optional[WidgetNode] = at_load
+    if pid is not None and resolved is None:
+        resolved = next((n for n in (_node_by_id(x, pid) for x in snaps) if n is not None), None)
+    if pid is None:
+        v["controls-a-popup"] = ("cantTell", "no aria-controls or aria-owns; the popup cannot be located")
+    elif resolved is not None:
+        v["controls-a-popup"] = (
+            ("pass", f"references {resolved.selector} (role={resolved.role})") if resolved.role in _POPUP_ROLES
+            else ("fail", f"references {resolved.selector}, whose role {resolved.role!r} is not a combobox popup")
+        )
+    elif any(root_now(x).attributes.get("aria-expanded") == "true" for x in snaps):
+        v["controls-a-popup"] = ("fail", f"aria-expanded=true but {pid!r} does not exist")
+    else:
+        v["controls-a-popup"] = ("cantTell", f"{pid!r} is not in the DOM and the popup was never displayed "
+                                             "(it may be rendered lazily)")
+
+    ready_down = s[0] is not None and s[1] is not None and s[0].active == root.selector and is_open(s[0]) is False
+    down_opens = ready_down and bool(is_open(s[1]))
+    ready_alt = s[4] is not None and s[5] is not None and s[4].active == root.selector and is_open(s[4]) is False
+    alt_opens = ready_alt and bool(is_open(s[5]))
+    click_opens: Optional[bool] = (
+        None if s[6] is None or s[7] is None or is_open(s[6]) is not False else bool(is_open(s[7]))
+    )
+
+    if pid is None:
+        v["keyboard-opens-popup"] = ("cantTell", "the popup cannot be located, so opening cannot be observed")
+    elif s[0] is None or s[1] is None:
+        v["keyboard-opens-popup"] = ("cantTell", _missing_snapshot(run))
+    elif not ready_down:
+        v["keyboard-opens-popup"] = ("cantTell", "precondition not met: combobox focused with the popup closed")
+    elif down_opens:
+        v["keyboard-opens-popup"] = ("pass", "ArrowDown displays the popup")
+    elif alt_opens:
+        v["keyboard-opens-popup"] = ("pass", "Alt+ArrowDown displays the popup (ArrowDown does not)")
+    elif not ready_alt or click_opens is None:
+        v["keyboard-opens-popup"] = ("cantTell", "ArrowDown did not open the popup, and Alt+ArrowDown or a click "
+                                                 "could not be compared")
+    elif click_opens:
+        v["keyboard-opens-popup"] = ("fail", "a click displays the popup, but neither ArrowDown nor Alt+ArrowDown does")
+    else:
+        v["keyboard-opens-popup"] = ("cantTell", "neither ArrowDown, Alt+ArrowDown nor a click displays the popup — "
+                                                 "it may need typing first; not a keyboard-only difference")
+
+    open_snaps = [x for x in snaps if is_open(x)]
+    if pid is None:
+        v["expanded-true-when-open"] = ("cantTell", "the popup cannot be located")
+    elif not open_snaps:
+        v["expanded-true-when-open"] = ("cantTell", "the popup was never displayed")
+    else:
+        bad = [x.step_index for x in open_snaps if root_now(x).attributes.get("aria-expanded") != "true"]
+        v["expanded-true-when-open"] = (
+            ("fail", f"popup displayed without aria-expanded=true after step(s) {bad}") if bad
+            else ("pass", "aria-expanded=true whenever the popup is displayed")
+        )
+
+    editable = root.tag in ("input", "textarea")
+    popup_role = resolved.role if resolved is not None else None
+    opt_ids = {o.attributes["id"] for o in options if o.attributes.get("id")}
+    opt_sels = {o.selector for o in options}
+    if not down_opens or s[1] is None or s[2] is None:
+        v["arrow-keys-reach-options"] = ("cantTell", "precondition not met: ArrowDown opened the popup")
+    elif popup_role != "listbox":
+        v["arrow-keys-reach-options"] = ("cantTell", f"popup role is {popup_role!r}; option navigation is "
+                                                     "checked for listbox popups only")
+    else:
+        verified, unverified = [], []
+        for x in (s[1], s[2]):
+            ad = (root_now(x).attributes.get("aria-activedescendant") or "").strip()
+            if x.active in opt_sels or (ad and ad in opt_ids):
+                verified.append(x.active if x.active in opt_sels else ad)
+            elif ad or (x.active not in (None, root.selector)):
+                unverified.append(ad or x.active)
+        if verified:
+            v["arrow-keys-reach-options"] = ("pass", f"ArrowDown made an option active ({verified[-1]})")
+        elif unverified:
+            v["arrow-keys-reach-options"] = ("cantTell", f"ArrowDown moved to {unverified[-1]!r}, which is not "
+                                                         "an option known at scan time")
+        else:
+            v["arrow-keys-reach-options"] = (
+                "fail", "with the listbox open, ArrowDown made no option active "
+                        "(no aria-activedescendant, no focus on an option)",
+                *((APG_ONLY,) if editable else ()))
+
+    if not down_opens or s[1] is None or s[2] is None:
+        v["focus-stays-on-combobox"] = ("cantTell", "precondition not met: ArrowDown opened the popup")
+    elif popup_role == "dialog":
+        # A date-picker dialog takes focus by design (APG combobox-datepicker).
+        v["focus-stays-on-combobox"] = ("cantTell", "the popup is a dialog, which takes focus by design")
+    elif s[1].active == root.selector and s[2].active == root.selector:
+        v["focus-stays-on-combobox"] = ("pass", "DOM focus stayed on the combobox")
+    else:
+        moved = s[2].active if s[2].active != root.selector else s[1].active
+        v["focus-stays-on-combobox"] = ("fail", f"DOM focus moved to {moved or 'the page'}")
+
+    if s[2] is None or s[3] is None or not is_open(s[2]):
+        v["escape-closes-popup"] = ("cantTell", "precondition not met: popup open before Escape")
+    elif is_open(s[3]) is False:
+        v["escape-closes-popup"] = ("pass", "Escape hid the popup")
+    else:
+        v["escape-closes-popup"] = ("fail", "Escape did not hide the popup")
+    return v
+
+
 CHECKS: dict[str, PatternChecks] = {
     "tablist": PatternChecks(_tablist_plan, _tablist_evaluate),
     "disclosure": PatternChecks(_disclosure_plan, _disclosure_evaluate),
     "menu-button": PatternChecks(_menu_button_plan, _menu_button_evaluate),
+    "dialog": PatternChecks(_dialog_plan, _dialog_evaluate, watch=_dialog_watch),
+    "combobox": PatternChecks(_combobox_plan, _combobox_evaluate, watch=_combobox_watch),
 }
 
 
 # --- the runner -------------------------------------------------------------
 
-def _watch(widget: Widget) -> list[str]:
+def _watch(widget: Widget, checks: Optional[PatternChecks] = None) -> list[str]:
     seen: list[str] = []
-    for n in (widget.root, *widget.items, *widget.related):
-        if n.selector not in seen:
-            seen.append(n.selector)
+    extra = checks.watch(widget) if checks is not None and checks.watch is not None else []
+    for sel in (*(n.selector for n in (widget.root, *widget.items, *widget.related)), *extra):
+        if sel not in seen:
+            seen.append(sel)
     return seen
 
 
@@ -781,7 +1157,7 @@ async def run_contracts(
             run: Optional[ExerciseResult] = None
             if steps:
                 try:
-                    run = await exercise(widget, steps, _watch(widget), budget)
+                    run = await exercise(widget, steps, _watch(widget, checks), budget)
                 except Exception as exc:
                     logger.info(
                         "exerciseWidget unavailable for %s (%s); driven checks are cantTell.",
