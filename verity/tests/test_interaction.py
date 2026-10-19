@@ -102,6 +102,16 @@ def test_unknown_match_key_is_an_error_not_a_match_everything():
         matches({"role": "button", "lack": ["aria-haspopup"]}, disclosure_widget())
 
 
+def test_a_button_that_opens_a_listbox_is_not_a_disclosure():
+    """W3C APG combobox: its open button has aria-expanded and controls a listbox."""
+    combo_button = Widget(
+        root=node("#cb-button", aria_expanded="false", aria_controls="cb-list"),
+        related=[node("#cb-list", role="listbox", id="cb-list")],
+    )
+    assert not matches(load_contracts()["disclosure"].match, combo_button)
+    assert matches(load_contracts()["disclosure"].match, disclosure_widget())
+
+
 def test_empty_match_matches_nothing():
     assert not matches({}, disclosure_widget())
 

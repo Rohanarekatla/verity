@@ -119,7 +119,7 @@ Exerciser = Callable[[Widget, list[InteractionStep], list[str], InteractionBudge
 
 # --- matching a widget to a contract (A9.1: "identify by ARIA role") --------
 
-_MATCH_KEYS = {"role", "has", "lacks", "values"}
+_MATCH_KEYS = {"role", "has", "lacks", "values", "controls_not"}
 
 
 def matches(match: dict, widget: Widget) -> bool:
@@ -128,7 +128,7 @@ def matches(match: dict, widget: Widget) -> bool:
 
     Supported keys: `role` (one role or a list), `has` / `lacks` (attribute
     names that must be present / absent), `values` (attribute -> allowed
-    values). An unknown key is an error, not ignored: a typo'd `lack:` that
+    values), `controls_not` (roles the aria-controls target must not have). An unknown key is an error, not ignored: a typo'd `lack:` that
     silently matched everything would judge widgets against the wrong pattern.
     """
     unknown = set(match) - _MATCH_KEYS
@@ -149,6 +149,16 @@ def matches(match: dict, widget: Widget) -> bool:
     for attr, allowed in (match.get("values") or {}).items():
         if root.attributes.get(attr) not in [str(v) for v in allowed]:
             return False
+    # `controls_not`: roles the root's aria-controls target must NOT have. The
+    # APG combobox's open button carries aria-expanded like a disclosure, but
+    # it controls a listbox and moves focus to the input by design — judged as
+    # a disclosure it "failed" on the W3C reference implementation.
+    excluded = set(match.get("controls_not") or [])
+    if excluded:
+        for target_id in (root.attributes.get("aria-controls") or "").split():
+            target = next((n for n in widget.related if n.attributes.get("id") == target_id), None)
+            if target is not None and target.role in excluded:
+                return False
     return True
 
 
