@@ -138,21 +138,37 @@ export async function captureElements(
   page: Page,
   selectors: string[],
   outDir: string,
+  budget: { maxCount?: number; maxMs?: number } = {},
 ): Promise<Record<string, ElementCapture>> {
   const out: Record<string, ElementCapture> = {};
+  const maxCount = budget.maxCount ?? CAPTURE_MAX_COUNT;
+  const maxMs = budget.maxMs ?? CAPTURE_MAX_MS;
+  const started = Date.now();
   let skipped = 0;
+  let overBudget = 0;
 
   for (const selector of new Set(selectors)) {
+    // Budget: crops feed only the (descoped, opt-in) vision path, so they
+    // must never be what makes a scan time out. github.com and apple.com have
+    // hundreds of images; capturing every one took the render past 120s.
+    if (Object.keys(out).length >= maxCount || Date.now() - started > maxMs) {
+      overBudget += 1;
+      continue;
+    }
     const capture = await captureElement(page, selector, outDir);
     if (capture) out[selector] = capture;
     else skipped += 1;
   }
 
-  if (skipped > 0) {
-    log.debug("element captures skipped", { skipped, captured: Object.keys(out).length });
+  if (skipped > 0 || overBudget > 0) {
+    log.debug("element captures skipped", { skipped, overBudget, captured: Object.keys(out).length });
   }
   return out;
 }
+
+/** Per-render crop budget (see captureElements). */
+const CAPTURE_MAX_COUNT = 60;
+const CAPTURE_MAX_MS = 15_000;
 
 /**
  * Every image-bearing element on the page, as selectors.
