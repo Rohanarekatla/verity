@@ -22,6 +22,7 @@
  */
 
 import type { Page } from "playwright";
+import { decodePng } from "../static/png.js";
 
 /** Mirrors verity/models/schemas.py:UnreachedReason (the string values). */
 export type UnreachedReason =
@@ -113,7 +114,7 @@ const FOCUS_STYLE_PROPS = [
 // Roles that drive their children with arrow keys rather than Tab (roving
 // tabindex). A `tabindex="-1"` element under one of these is reachable by
 // design — correct authoring, not a barrier. Keep in sync with the APG.
-const ROVING_ROLES = [
+export const ROVING_ROLES = [
   "tablist",
   "menu",
   "menubar",
@@ -130,6 +131,12 @@ const DEFAULT_MAX_PRESSES = 600;
 // Focus landing on the same selector this many presses in a row with no
 // progress is a keyboard trap: the page is swallowing Tab.
 const TRAP_REPEAT_THRESHOLD = 4;
+// While focus is inside an <iframe>, the outer document's activeElement stays
+// the frame element no matter how many controls Tab moves through inside it
+// (a YouTube embed has a dozen). That is not a trap — it is focus we cannot
+// see. Allow this many presses inside one frame before giving up on it as a
+// blind spot (reported as an incomplete traversal, never as a trap).
+const IFRAME_PRESS_CAP = 60;
 
 /** Shape returned by the in-page describe of document.activeElement. */
 interface ActiveDescriptor {
@@ -178,6 +185,12 @@ export async function traverseTabOrder(
     for (const e of entries) baseline.set(e.selector, e.sig);
   }
 
+  // What was focusable when the traversal began. A control that becomes
+  // focusable only later (stripe.com's carousel enables "Previous" once it
+  // advances) was legitimately skipped by Tab while disabled; judging it
+  // unreachable afterwards would be a false SC 2.1.1 barrier.
+  const initiallyFocusable: string[] = await page.evaluate(focusableNow);
+
   const stops: TabStop[] = [];
   const visited = new Set<string>();
   let prevSelector: string | null = null;
@@ -189,6 +202,7 @@ export async function traverseTabOrder(
   let complete = true;
   let incompleteReason: string | null = null;
   let iframeSeen = false;
+  let iframeRun = 0;
 
   let presses = 0;
   for (; presses < maxPresses; presses++) {
@@ -225,6 +239,19 @@ export async function traverseTabOrder(
       continue;
     }
 
+    // Focus still inside the same iframe: it is moving through the frame's own
+    // controls, which we cannot observe. Keep pressing; it is not a trap.
+    if (d.isIframe && d.selector === prevSelector) {
+      iframeRun++;
+      if (iframeRun >= IFRAME_PRESS_CAP) {
+        complete = false;
+        incompleteReason = `focus did not leave iframe ${d.selector} within ${IFRAME_PRESS_CAP} presses; frame content is not traversed`;
+        break;
+      }
+      continue;
+    }
+    iframeRun = 0;
+
     // Trap: the same element keeps catching focus and Tab never advances.
     if (d.selector === prevSelector) {
       repeatRun++;
@@ -239,6 +266,14 @@ export async function traverseTabOrder(
     prevSelector = d.selector;
 
     visited.add(d.selector);
+    let focusVisible = resolveFocusVisible(measureStyle, baseline, d.selector, d.style_sig);
+    if (focusVisible === false) {
+      // The element's own style did not change — but the indicator may be
+      // drawn elsewhere: a wrapper's :focus-within ring (github.com's email
+      // field), a ::after outline, an offset box-shadow. Only pixels can say
+      // there is nothing. A false here becomes an SC 2.4.7 failure.
+      focusVisible = await confirmNoIndicatorByPixels(page, d.selector);
+    }
     stops.push({
       order: stops.length,
       selector: d.selector,
@@ -247,12 +282,18 @@ export async function traverseTabOrder(
       role: d.role,
       accessible_name: d.accessible_name,
       tabindex: d.tabindex,
-      focus_visible: resolveFocusVisible(measureStyle, baseline, d.selector, d.style_sig),
+      focus_visible: focusVisible,
       dom_order: d.dom_order,
     });
   }
 
-  if (presses >= maxPresses && !trapDetected) {
+  if (trapDetected) {
+    // The trap is a finding in its own right, but the traversal stopped at it:
+    // everything after the trap was never visited, so the unreached list below
+    // is not evidence that those elements are unreachable.
+    complete = false;
+    incompleteReason = `traversal stopped at a keyboard trap on ${trapSelector}`;
+  } else if (presses >= maxPresses) {
     // We stopped because we hit the cap, not because the traversal finished.
     // That is a partial observation and must be reported as one.
     complete = false;
@@ -263,7 +304,7 @@ export async function traverseTabOrder(
   // roving-tabindex distinction is made.
   const unreached: UnreachedRegion[] = await page.evaluate(
     classifyUnreached,
-    { visited: [...visited], rovingRoles: ROVING_ROLES },
+    { visited: [...visited], rovingRoles: ROVING_ROLES, initiallyFocusable },
   );
   if (iframeSeen && !unreached.some((u) => u.reason === "iframe")) {
     unreached.push({
@@ -284,6 +325,120 @@ export async function traverseTabOrder(
     complete,
     incomplete_reason: incompleteReason,
   };
+}
+
+/** Margin (CSS px) around the element scanned for a focus indicator. */
+const INDICATOR_MARGIN_PX = 8;
+/** Per-channel difference that counts as a changed pixel. */
+const INDICATOR_TOLERANCE = 16;
+/** Changed pixels needed to call it a visible indicator (not noise). */
+const INDICATOR_MIN_PIXELS = 4;
+
+/**
+ * A4.3 confirmation — is there really no visible change when this element
+ * has keyboard focus? Screenshot the element plus a margin while focused,
+ * blur, screenshot again, and restore focus (sequential navigation continues
+ * from the focused element, so the traversal is unaffected).
+ *
+ * true  = pixels changed: an indicator exists somewhere around the element
+ * false = identical: there is genuinely nothing to see
+ * null  = could not measure (offscreen, detached) — never a failure
+ */
+async function confirmNoIndicatorByPixels(page: Page, selector: string): Promise<boolean | null> {
+  try {
+    const box = await page.evaluate(
+      ({ sel, m }) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        // "instant": with scroll-behavior:smooth (github.com) a plain
+        // scrollIntoView animates, the box below is measured mid-scroll, and
+        // both shots photograph the wrong part of the page — identical, so
+        // "no indicator". That was a false SC 2.4.7 failure.
+        // "center", not "nearest": nearest parks it at the viewport edge,
+        // under a sticky header (github.com), and both shots photograph the
+        // header.
+        el.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" as ScrollBehavior });
+        const r = el.getBoundingClientRect();
+        // Something else on top at its centre (a fixed bar, an overlay):
+        // whatever we photograph is not this element.
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        if (!top || !(top === el || el.contains(top) || top.contains(el))) return null;
+        const x = Math.max(0, Math.floor(r.left - m));
+        const y = Math.max(0, Math.floor(r.top - m));
+        const right = Math.min(window.innerWidth, Math.ceil(r.right + m));
+        const bottom = Math.min(window.innerHeight, Math.ceil(r.bottom + m));
+        return right > x && bottom > y ? { x, y, width: right - x, height: bottom - y } : null;
+      },
+      { sel: selector, m: INDICATOR_MARGIN_PX },
+    );
+    if (!box) return null;
+    // Scroll-reveal animations (github.com's lower sections fade in from
+    // opacity 0 once scrolled to): wait until the element is actually shown.
+    // Two identical shots of an invisible element mean "could not see", not
+    // "no indicator".
+    if (!(await waitUntilOpaque(page, selector))) return null;
+    // Let a focus-ring transition finish before reading it.
+    await page.waitForTimeout(200);
+    // The box must not have moved since it was measured (late scroll, layout
+    // shift) — otherwise the shots are of somewhere else, and "identical"
+    // would mean nothing.
+    const still = await page.evaluate(
+      ({ sel, b, m }) => {
+        const r = document.querySelector(sel)?.getBoundingClientRect();
+        return !!r && Math.abs(Math.max(0, Math.floor(r.left - m)) - b.x) <= 1 && Math.abs(Math.max(0, Math.floor(r.top - m)) - b.y) <= 1;
+      },
+      { sel: selector, b: box, m: INDICATOR_MARGIN_PX },
+    );
+    if (!still) return null;
+    const focused = await page.screenshot({ clip: box, animations: "disabled" });
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.waitForTimeout(200);
+    const unfocused = await page.screenshot({ clip: box, animations: "disabled" });
+    await page.evaluate((sel) => (document.querySelector(sel) as HTMLElement | null)?.focus({ preventScroll: true }), selector);
+
+    // Decode and compare in Node: shipping pixel arrays out of the page as
+    // JSON was most of the cost.
+    const a = decodePng(focused);
+    const b = decodePng(unfocused);
+    let changed = -1;
+    if (a.data.length === b.data.length) {
+      changed = 0;
+      for (let i = 0; i < a.data.length; i += 4) {
+        if (Math.abs(a.data[i] - b.data[i]) > INDICATOR_TOLERANCE ||
+            Math.abs(a.data[i + 1] - b.data[i + 1]) > INDICATOR_TOLERANCE ||
+            Math.abs(a.data[i + 2] - b.data[i + 2]) > INDICATOR_TOLERANCE) changed++;
+      }
+    }
+    if (changed < 0) return null;
+    return changed >= INDICATOR_MIN_PIXELS;
+  } catch {
+    return null;
+  }
+}
+
+/** Effective opacity (product over ancestors) the element must reach. */
+const OPAQUE_ENOUGH = 0.95;
+const OPAQUE_WAIT_MS = 1_500;
+
+/** Wait until the element and its ancestors are effectively opaque; false if never. */
+export async function waitUntilOpaque(page: Page, selector: string): Promise<boolean> {
+  const started = Date.now();
+  for (;;) {
+    const opacity = await page
+      .evaluate((sel) => {
+        let o = 1;
+        for (let a = document.querySelector(sel); a; a = a.parentElement) {
+          const cs = getComputedStyle(a);
+          if (cs.visibility !== "visible") return 0;
+          o *= parseFloat(cs.opacity);
+        }
+        return o;
+      }, selector)
+      .catch(() => 0);
+    if (opacity >= OPAQUE_ENOUGH) return true;
+    if (Date.now() - started > OPAQUE_WAIT_MS) return false;
+    await page.waitForTimeout(100);
+  }
 }
 
 /**
@@ -488,13 +643,52 @@ function captureBaselineStyles(styleProps: string[]): Array<{ selector: string; 
   return out;
 }
 
+/** Selectors of enabled, visible, Tab-focusable elements right now. Runs in the page. */
+function focusableNow(): string[] {
+  const FOCUSABLE =
+    'a[href], button, input:not([type="hidden"]), select, textarea, [tabindex], [contenteditable="true"]';
+  function cssPath(node: Element): string {
+    if (node.id) return `#${CSS.escape(node.id)}`;
+    const parts: string[] = [];
+    let cur: Element | null = node;
+    while (cur && cur.nodeType === 1 && cur !== document.documentElement) {
+      if (cur.id) {
+        parts.unshift(`#${CSS.escape(cur.id)}`);
+        break;
+      }
+      const tag = cur.tagName.toLowerCase();
+      const parent: Element | null = cur.parentElement;
+      if (!parent) {
+        parts.unshift(tag);
+        break;
+      }
+      const sameTag = Array.from(parent.children).filter((c) => c.tagName === cur!.tagName);
+      if (sameTag.length === 1) parts.unshift(tag);
+      else parts.unshift(`${tag}:nth-of-type(${sameTag.indexOf(cur) + 1})`);
+      cur = parent;
+    }
+    return parts.join(" > ");
+  }
+  const out: string[] = [];
+  for (const el of Array.from(document.querySelectorAll(FOCUSABLE)) as HTMLElement[]) {
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    if ((r.width === 0 && r.height === 0) || cs.visibility === "hidden" || cs.display === "none") continue;
+    if ((el as HTMLButtonElement).disabled) continue;
+    out.push(cssPath(el));
+  }
+  return out;
+}
+
 /** Classify focusable elements Tab never reached. Runs in the page. */
 function classifyUnreached(args: {
   visited: string[];
   rovingRoles: string[];
+  initiallyFocusable: string[];
 }): UnreachedRegion[] {
   const { visited, rovingRoles } = args;
   const visitedSet = new Set(visited);
+  const initially = new Set(args.initiallyFocusable);
   const FOCUSABLE =
     'a[href], button, input:not([type="hidden"]), select, textarea, [tabindex], [contenteditable="true"]';
   const NATIVE_INTERACTIVE = new Set(["A", "BUTTON", "INPUT", "SELECT", "TEXTAREA"]);
@@ -598,6 +792,13 @@ function classifyUnreached(args: {
           detail: "tabindex=-1 with no roving-tabindex ancestor",
         });
       }
+      continue;
+    }
+
+    // Not focusable when the traversal started (disabled, hidden, not yet
+    // rendered): Tab skipping it then proves nothing about it now.
+    if (!initially.has(selector)) {
+      out.push({ selector, reason: "unknown", detail: "became focusable during the traversal (dynamic state)" });
       continue;
     }
 

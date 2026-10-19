@@ -1,0 +1,35 @@
+<!doctype html>
+<!--
+  A9.4 fail fixture for data/apg-contracts/tablist.yaml. Roving tabindex
+  WITHOUT the arrow keys: only the first tab is in the Tab sequence, the other
+  two carry tabindex="-1", and nothing handles ArrowLeft/ArrowRight — so tabs
+  two and three cannot be reached from the keyboard at all. A real SC 2.1.1
+  barrier: the runner must fail `arrow-keys-move-between-tabs` as a violation.
+
+  (The previous fail fixture — every tab in the Tab order, no arrows — is
+  un-idiomatic but fully keyboard-reachable, so it is no longer a WCAG fail.)
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>APG tablist — fail</title></head>
+  <body>
+    <button id="before">Before the widget</button>
+    <div role="tablist" id="tabs" aria-label="Entertainment">
+      <button role="tab" id="tab-1" aria-controls="panel-1" aria-selected="true" tabindex="0">Nils</button>
+      <button role="tab" id="tab-2" aria-controls="panel-2" aria-selected="false" tabindex="-1">Agnes</button>
+      <button role="tab" id="tab-3" aria-controls="panel-3" aria-selected="false" tabindex="-1">Complex</button>
+    </div>
+    <div role="tabpanel" id="panel-1" aria-labelledby="tab-1" tabindex="0"><p>Nils panel</p></div>
+    <div role="tabpanel" id="panel-2" aria-labelledby="tab-2" tabindex="0" hidden><p>Agnes panel</p></div>
+    <div role="tabpanel" id="panel-3" aria-labelledby="tab-3" tabindex="0" hidden><p>Complex panel</p></div>
+    <button id="after">After the widget</button>
+    <script>
+      const tabs = [...document.querySelectorAll('[role="tab"]')];
+      for (const t of tabs) t.addEventListener("click", () => {
+        for (const u of tabs) {
+          u.setAttribute("aria-selected", String(u === t));
+          document.getElementById(u.getAttribute("aria-controls")).hidden = u !== t;
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -46,5 +46,15 @@
   <div class="cell"><span id="solid-grey">White text on solid grey background</span></div>
   <div class="cell"><span id="solid-white">Black text on solid white background</span></div>
   <div class="cell"><span id="over-image">White text over a busy checkerboard image</span></div>
+  <!-- BC-A2: one region, two fonts. Large heading text with a small inline
+       note — no single SC 1.4.3 threshold applies, so font_uniform is false. -->
+  <div class="cell"><span id="mixed-font" style="color:#000;background:#fff;font-size:24px">Large heading <small style="font-size:12px">with small print</small></span></div>
+  <!-- apple.com regressions. #clip-text paints its glyphs with the
+       background (background-clip:text), so CSS color is not the on-screen
+       colour. #fade-a / #fade-b carry transition:all — sampling one used to
+       leave the other mid-fade from transparent when sampled next. -->
+  <div class="cell"><span id="clip-text" style="font-size:24px;color:#fff;background:linear-gradient(#fff,#ddd);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent">Gradient text</span></div>
+  <div class="cell" style="background:#000;padding:8px"><a id="fade-a" href="#" style="color:#2997ff;transition:all .4s;font-size:17px">Buy</a> <a id="fade-b" href="#" style="color:#2997ff;transition:all .4s;font-size:17px">Learn more</a></div>
+  <div class="cell" aria-hidden="true"><span id="decor" style="color:#555;background:#333;font-size:16px">/ / / / / decorative</span></div>
 </body>
 </html>

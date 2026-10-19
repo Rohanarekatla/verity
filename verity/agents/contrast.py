@@ -39,10 +39,38 @@ from verity.models.schemas import (
 #
 # The middle band is not a gap in the maths, it is a gap in the input.
 # Guessing 4.5 there would flag compliant large text as a failure, which is
-# exactly the false positive the Sunday gate forbids. Widening the band is a
-# matter of Track A adding fontSize/fontWeight, not of changing this rule.
+# exactly the false positive the Sunday gate forbids.
+#
+# BC-A2 closes the band where the input now exists: `sampleRegion` reports the
+# rendered font, and when every text node in the region shares one size and
+# weight, `text_size_class()` says which threshold applies. A mixed or unread
+# font still leaves the band `cantTell` — the rule is unchanged, only the
+# input got better.
 THRESHOLD_NORMAL_TEXT = 4.5
 THRESHOLD_LARGE_TEXT = 3.0
+
+# WCAG 2.x "large scale" text: at least 18pt, or 14pt bold. CSS has 96px per
+# 72pt, so 18pt = 24px and 14pt = 18.666…px. The epsilon only absorbs float
+# noise in a computed "14pt" — it is not a tolerance.
+LARGE_TEXT_PX = 18 * 96 / 72
+LARGE_BOLD_TEXT_PX = 14 * 96 / 72
+BOLD_WEIGHT = 700
+_PX_EPSILON = 0.01
+
+
+def text_size_class(sample: RegionSample) -> Optional[str]:
+    """
+    BC-A2 — "large", "normal", or None when the font does not settle it.
+
+    None whenever the font was not read, or the region mixes sizes/weights:
+    one region with two thresholds has no single honest verdict in the band.
+    """
+    if not sample.font_uniform or sample.font_size_px is None or sample.font_weight is None:
+        return None
+    size = sample.font_size_px + _PX_EPSILON
+    if size >= LARGE_TEXT_PX or (size >= LARGE_BOLD_TEXT_PX and sample.font_weight >= BOLD_WEIGHT):
+        return "large"
+    return "normal"
 
 
 def _normalize_srgb(c: int) -> float:
@@ -119,6 +147,8 @@ REASON_NOT_SAMPLED = "sampling-failed"
 REASON_AMBIGUOUS = "glyph-background-split-unreliable"
 REASON_NO_BACKGROUND = "no-background-samples"
 REASON_THRESHOLD_UNKNOWN = "text-size-unknown"
+REASON_NO_GLYPHS = "foreground-not-found-in-pixels"
+REASON_POSSIBLY_DECORATIVE = "aria-hidden-possibly-decorative"
 
 
 def _mark_inconclusive(finding: Finding, reason: str, detail: str) -> Finding:
@@ -198,14 +228,17 @@ def adjudicate_contrast(finding: Finding, sample: RegionSample) -> Finding:
     |----------------------------------|------------|---------------|
     | sampling failed                  | cantTell   | NEEDS_REVIEW  |
     | glyph/background split ambiguous | cantTell   | NEEDS_REVIEW  |
+    | no pixel matches the text colour | cantTell   | NEEDS_REVIEW  |
     | no background samples            | cantTell   | NEEDS_REVIEW  |
     | worst ratio >= 4.5               | pass       | AUTHORITATIVE |
     | worst ratio <  3.0               | fail       | AUTHORITATIVE |
-    | 3.0 <= worst ratio < 4.5         | cantTell   | NEEDS_REVIEW  |
+    | 3.0 <= worst ratio < 4.5, large  | pass       | AUTHORITATIVE |
+    | 3.0 <= worst ratio < 4.5, normal | fail       | AUTHORITATIVE |
+    | 3.0 <= worst ratio < 4.5, unknown| cantTell   | NEEDS_REVIEW  |
 
     The last row is the zero-false-positive rule: in that band the verdict
-    depends on whether the text is "large", and nothing in the pipeline
-    knows that yet. See the threshold constants above.
+    depends on whether the text is "large", and only a uniform, measured font
+    (BC-A2, `text_size_class`) may settle it. See the threshold constants above.
 
     No model is consulted anywhere in this function.
     """
@@ -213,8 +246,10 @@ def adjudicate_contrast(finding: Finding, sample: RegionSample) -> Finding:
         return _mark_inconclusive(
             finding,
             REASON_NOT_SAMPLED,
-            "Contrast could not be adjudicated: the region's pixels could not "
-            "be sampled (animation, video, or a cross-origin canvas).",
+            "Contrast could not be adjudicated: no background distinct from the "
+            "text colour could be sampled (text nearly the same colour as its "
+            "background, or a region that cannot be captured, such as video "
+            "or a cross-origin canvas).",
         )
 
     if sample.ambiguous:
@@ -227,6 +262,19 @@ def adjudicate_contrast(finding: Finding, sample: RegionSample) -> Finding:
             REASON_AMBIGUOUS,
             "Contrast could not be adjudicated: text and background pixels "
             "could not be separated reliably in this region.",
+        )
+
+    if sample.text_pixel_count == 0:
+        # Not one rendered pixel matched the foreground colour, so that colour
+        # is not what the glyphs are painted in (SVG `fill`, gradient or
+        # clipped text). Any ratio from it compares colours nobody sees — the
+        # SVG-text false positive found in end-to-end testing. Workers since
+        # then also flag this `ambiguous`; this guards older ones.
+        return _mark_inconclusive(
+            finding,
+            REASON_NO_GLYPHS,
+            "Contrast could not be adjudicated: no rendered pixel matched the "
+            "text colour, so the colour the text is actually painted in is unknown.",
         )
 
     ratio = worst_case_ratio(sample.foreground, sample.background_samples)
@@ -249,7 +297,12 @@ def adjudicate_contrast(finding: Finding, sample: RegionSample) -> Finding:
         "threshold_normal_text": THRESHOLD_NORMAL_TEXT,
         "threshold_large_text": THRESHOLD_LARGE_TEXT,
         "method": "worst-case over sampled background regions (WCAG 2.x)",
+        "font_size_px": sample.font_size_px,
+        "font_weight": sample.font_weight,
+        "font_uniform": sample.font_uniform,
+        "aria_hidden": sample.aria_hidden,
     }
+    size_class = text_size_class(sample)
 
     if ratio >= THRESHOLD_NORMAL_TEXT:
         finding.outcome = "pass"
@@ -259,6 +312,20 @@ def adjudicate_contrast(finding: Finding, sample: RegionSample) -> Finding:
             f"background region, for text of any size."
         )
         evidence["verdict_basis"] = "above the 4.5:1 normal-text threshold"
+    elif sample.aria_hidden and (ratio < THRESHOLD_LARGE_TEXT or size_class == "normal"):
+        # It fails — but text hidden from assistive technology is usually
+        # decoration (developer.mozilla.org's circular background text), and
+        # decoration is exempt from SC 1.4.3. Only a person can tell which.
+        finding = _mark_inconclusive(
+            finding,
+            REASON_POSSIBLY_DECORATIVE,
+            f"Contrast is {ratio:.2f}:1, which would fail SC 1.4.3, but the text is "
+            f"inside aria-hidden=\"true\" and may be decorative (exempt). Needs review.",
+        )
+        evidence["resolved"] = False
+        evidence["reason"] = REASON_POSSIBLY_DECORATIVE
+        finding.evidence.computed_values["contrast_adjudication"] = evidence
+        return finding
     elif ratio < THRESHOLD_LARGE_TEXT:
         finding.outcome = "fail"
         finding.provenance = Provenance.AUTHORITATIVE
@@ -267,6 +334,24 @@ def adjudicate_contrast(finding: Finding, sample: RegionSample) -> Finding:
             f"background region, for text of any size."
         )
         evidence["verdict_basis"] = "below the 3:1 large-text threshold"
+    elif size_class == "large":
+        finding.outcome = "pass"
+        finding.provenance = Provenance.AUTHORITATIVE
+        finding.message = (
+            f"Contrast {ratio:.2f}:1 meets SC 1.4.3 for large text "
+            f"({sample.font_size_px:g}px, weight {sample.font_weight}) at every "
+            f"sampled background region."
+        )
+        evidence["verdict_basis"] = "large text, at or above the 3:1 threshold"
+    elif size_class == "normal":
+        finding.outcome = "fail"
+        finding.provenance = Provenance.AUTHORITATIVE
+        finding.message = (
+            f"Contrast {ratio:.2f}:1 fails SC 1.4.3 for normal-size text "
+            f"({sample.font_size_px:g}px, weight {sample.font_weight}), which "
+            f"needs 4.5:1, at its worst sampled background region."
+        )
+        evidence["verdict_basis"] = "normal text, below the 4.5:1 threshold"
     else:
         # The honest middle. Recorded with the ratio, because a reviewer with
         # the page in front of them can finish the job in seconds if we tell
@@ -276,7 +361,7 @@ def adjudicate_contrast(finding: Finding, sample: RegionSample) -> Finding:
             REASON_THRESHOLD_UNKNOWN,
             f"Contrast is {ratio:.2f}:1. This passes SC 1.4.3 for large text "
             f"(>= 3:1) but fails for normal text (>= 4.5:1), and the rendered "
-            f"text size is not available. Needs review.",
+            f"text size is unknown or mixed within the region. Needs review.",
         )
         evidence["resolved"] = False
         evidence["reason"] = REASON_THRESHOLD_UNKNOWN

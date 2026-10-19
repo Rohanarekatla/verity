@@ -1,0 +1,154 @@
+# APG contract — Menu Button (button + role=menu)
+#
+# Week 9 artifact, Track A half (A's second independent contract). Written
+# by hand from the WAI-ARIA Authoring Practices menu button pattern and the
+# ARIA 1.2 `menu` / `menuitem` / `aria-haspopup` definitions, before the
+# checks in verity/agents/interaction.py. Cross-check against B.
+#
+# ---------------------------------------------------------------------------
+# The point of this file
+#
+# A menu button is the first pattern where focus has to MOVE. Opening the menu
+# is not enough: focus must land on the first item, arrows must move within
+# it, and Escape must close it and put focus back on the button. A menu that
+# opens visually but leaves focus on the button looks fine to a mouse user and
+# strands a keyboard user — every arrow key now scrolls the page instead.
+#
+# The false alarm to avoid: the APG makes several things optional (aria-
+# controls, ArrowUp-to-open, typeahead, wrapping). Each optional behaviour is
+# either a `warning` or listed under `not_asserted`, never a violation.
+#
+# Severity vocabulary as in tablist.yaml.
+#
+# Keyboard PARITY (added after real-site testing): a key that fails is a WCAG
+# barrier only when the other activation key fails too AND a mouse click
+# succeeds. Space failing while Enter works is reported as an APG deviation;
+# nothing working for mouse or keyboard is not a keyboard-only difference.
+# Likewise focus/arrow failures are barriers only when the menuitems are
+# tabindex=-1 (reachable solely through the menu's own keys).
+
+contract: menu-button
+version: 1
+source:
+  - "WAI-ARIA Authoring Practices Guide — Menu Button pattern"
+  - "ARIA 1.2 — roles: button, menu, menuitem; property: aria-haspopup"
+wcag:
+  - "2.1.1"   # Keyboard
+  - "2.4.3"   # Focus Order
+  - "4.1.2"   # Name, Role, Value
+
+# aria-haspopup="true" and "menu" both mean a menu; "listbox"/"dialog"/etc.
+# are other patterns and must not be judged against this contract.
+match:
+  role: button
+  values:
+    aria-haspopup: ["true", "menu"]
+
+# ---------------------------------------------------------------------------
+# Structure
+# ---------------------------------------------------------------------------
+structure:
+  - id: trigger-has-accessible-name
+    severity: violation
+    assert: "the menu button has a non-empty accessible name"
+    wcag: "4.1.2"
+
+  - id: controls-a-menu
+    severity: violation
+    assert: "when aria-controls is present, it references an element with role=menu"
+    wcag: "4.1.2"
+    note: >
+      aria-controls is optional in the APG. Without it we cannot find the menu
+      at all, so every menu-dependent check below is cantTell — never a fail
+      for a reference the author was allowed to omit.
+
+  - id: menu-items-have-names
+    severity: violation
+    assert: "every role=menuitem in the menu has a non-empty accessible name"
+    wcag: "4.1.2"
+
+  - id: menu-hidden-initially
+    severity: warning
+    assert: "before any interaction the menu is not displayed"
+    wcag: "4.1.2"
+    note: >
+      An always-open "menu" is probably a toolbar or a list, not a menu
+      button — suspicious, but some sites render it open on load by design.
+
+# ---------------------------------------------------------------------------
+# Keyboard
+# ---------------------------------------------------------------------------
+keyboard:
+  - id: trigger-in-tab-sequence
+    severity: violation
+    assert: "an enabled menu button has no negative authored tabindex"
+    wcag: "2.1.1"
+
+  - id: enter-opens-menu
+    severity: violation
+    assert: "with the button focused and the menu closed, Enter displays the menu"
+    wcag: "2.1.1"
+
+  - id: open-focuses-first-item
+    severity: violation
+    assert: "when Enter opens the menu, focus moves to the first menuitem"
+    wcag: "2.4.3"
+    note: >
+      THE check for this pattern. A menu that opens with focus left on the
+      button is unusable by keyboard: arrows now act on the page, not the menu.
+
+  - id: expanded-true-when-open
+    severity: violation
+    assert: "while the menu is displayed, the button has aria-expanded=true"
+    wcag: "4.1.2"
+    note: >
+      Only the open state is asserted. The APG recommends REMOVING
+      aria-expanded when the menu is closed, so "false" and "absent" are both
+      correct there and neither is checked.
+
+  - id: arrow-down-moves-to-next-item
+    severity: violation
+    assert: "with the first menuitem focused, ArrowDown moves focus to the second"
+    wcag: "2.1.1"
+
+  - id: escape-closes-and-returns-focus
+    severity: warning
+    assert: "with the menu open, Escape hides it and returns focus to the button"
+    wcag: "2.4.3"
+    note: >
+      Warning, not violation (revised after real-site testing, 2026-10-18):
+      without Escape a keyboard user can still Tab away, so a missing Escape
+      is APG etiquette rather than a WCAG barrier.
+
+  - id: space-opens-menu
+    severity: violation
+    assert: "with the button focused and the menu closed, Space displays the menu"
+    wcag: "2.1.1"
+
+  - id: items-use-managed-focus
+    severity: warning
+    assert: "menuitems carry tabindex=-1 (focus is managed by the menu, not Tab)"
+    wcag: "2.1.1"
+    note: >
+      aria-activedescendant is a valid alternative to moving DOM focus, so a
+      menu whose items lack tabindex=-1 is unusual rather than wrong.
+
+# ---------------------------------------------------------------------------
+# Deliberately NOT asserted
+# ---------------------------------------------------------------------------
+not_asserted:
+  - "ArrowUp opening the menu on the last item — optional in the APG"
+  - "whether ArrowDown/ArrowUp wrap at the ends — optional"
+  - "typeahead (character keys jump to items) — optional"
+  - "submenus (menuitem with aria-haspopup) — out of scope for version 1"
+  - "what activating a menuitem does"
+  - "whether the item labels are meaningful"
+
+reference_implementations:
+  - "APG menu button example — actions (element focus)"
+  - "APG menu button example — actions (aria-activedescendant)"
+  - "APG menu button example — navigation links"
+
+fixtures:
+  pass: apg/menu-button-pass.html
+  fail: apg/menu-button-fail.html

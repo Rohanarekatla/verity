@@ -148,9 +148,12 @@ class MLXBackend:
         self._load_failed = False
 
     def available(self) -> bool:
-        try:
-            import mlx_vlm  # noqa: F401
-        except ImportError:
+        # find_spec answers "is it installed?" without importing it: mlx_vlm
+        # pulls in transformers, whose import walks its whole package tree
+        # and can take minutes on a slow or cloud-synced disk.
+        import importlib.util
+
+        if importlib.util.find_spec("mlx_vlm") is None:
             return False
         return not self._load_failed
 
