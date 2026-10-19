@@ -50,15 +50,34 @@ inputs:
 runs:
   using: "composite"
   steps:
+    # No `cache: npm` here: setup-node rejects a cache-dependency-path
+    # containing `..`, and the worker's lockfile is only reachable from the
+    # action as `action_path/../node-worker`. npm is cached explicitly below.
     - name: Set up Node
       uses: actions/setup-node@v4
       with:
         node-version: "22"
-        cache: npm
-        cache-dependency-path: ${{ github.action_path }}/../node-worker/package-lock.json
 
     - name: Set up uv (Python)
       uses: astral-sh/setup-uv@v3
+
+    # A8.2 cache key. Hashed in the shell rather than with hashFiles(), which
+    # only sees the CONSUMER's workspace: when this action runs as
+    # `Rohanarekatla/verity/action@main` it lives outside that workspace, and
+    # hashFiles would silently return an empty string — a cache that never
+    # invalidates on a dependency bump.
+    - name: Hash the worker lockfile
+      id: lock
+      shell: bash
+      run: echo "hash=$(sha256sum "${{ github.action_path }}/../node-worker/package-lock.json" | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache npm
+      uses: actions/cache@v4
+      with:
+        path: ~/.npm
+        key: verity-npm-${{ runner.os }}-${{ steps.lock.outputs.hash }}
+        restore-keys: |
+          verity-npm-${{ runner.os }}-
 
     # A8.2 — cache the Playwright browser download. Keyed on the worker's
     # lockfile, so a dependency bump invalidates it; otherwise every run reuses
@@ -67,7 +86,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/ms-playwright
-        key: verity-playwright-${{ runner.os }}-${{ hashFiles('**/node-worker/package-lock.json') }}
+        key: verity-playwright-${{ runner.os }}-${{ steps.lock.outputs.hash }}
         restore-keys: |
           verity-playwright-${{ runner.os }}-
 
@@ -144,9 +163,16 @@ runs:
           echo "Baseline run — not gating."
           exit 0
         fi
-        if [ "${{ steps.scan.outputs.exit_code }}" != "0" ]; then
-          echo "::error::Verity found gating accessibility findings (exit ${{ steps.scan.outputs.exit_code }})."
+        code="${{ steps.scan.outputs.exit_code }}"
+        if [ "$code" = "1" ]; then
+          echo "::error::Verity found gating accessibility findings."
           exit 1
+        fi
+        if [ "$code" != "0" ]; then
+          # Exit 2 (or anything else): the scan itself did not complete. That
+          # is not an accessibility verdict and must not read as one.
+          echo "::error::Verity could not complete the scan (exit $code) — no accessibility verdict was reached. See the 'Run Verity scan' step log."
+          exit "$code"
         fi
         echo "No gating findings."
 

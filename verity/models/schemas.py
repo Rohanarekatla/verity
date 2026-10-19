@@ -287,6 +287,17 @@ class RegionSample(BaseModel):
     # near the text was swallowed into the text class). The adjudicator must
     # keep such a region needs_review, never pass it.
     ambiguous: bool = False
+    # BC-A2 — the rendered font, so SC 1.4.3 can pick 3:1 (large) or 4.5:1
+    # (normal) per node. None = not read (or an older worker); `font_uniform`
+    # is True only when every text node in the region shares one size and
+    # weight. Anything short of that leaves the 3.0–4.5 band `cantTell`.
+    font_size_px: Optional[float] = None
+    font_weight: Optional[int] = None
+    font_uniform: bool = False
+    # Inside aria-hidden="true": hidden from assistive technology, usually
+    # decorative — and pure decoration is exempt from SC 1.4.3. A failing
+    # ratio here goes to review rather than gating.
+    aria_hidden: bool = False
 
 
 # --- Keyboard traversal (A4.1–A4.2 produce it, B4.1–B4.4 interpret it) ---
@@ -337,6 +348,7 @@ class TabStop(BaseModel):
     # The *authored* tabindex attribute, not the computed one. A positive
     # value is the signal SC 2.4.3 cares about: it lifts an element out of
     # DOM order and is the classic way focus order stops matching meaning.
+    # None means the attribute is ABSENT (a plain <button>), not "unmeasured".
     tabindex: Optional[int] = None
     # A4.3 fills this in. `None` means "not measured", which is different
     # from `False` ("measured, and there is no visible indicator") and must
@@ -376,3 +388,107 @@ class TraversalResult(BaseModel):
     unreached: list[UnreachedRegion] = []
     complete: bool
     incomplete_reason: Optional[str] = None
+
+
+# --- Interaction agent (A9.1–A9.3 produce it, the contract runner reads it) --
+#
+# Same split as the keyboard wedge: the worker reports what the widget *is*
+# (A9.2) and what happened when we pressed keys on it (A9.1); whether that is
+# correct APG behaviour is decided on the Python side, against the
+# hand-written contracts in data/apg-contracts/.
+
+class WidgetNode(BaseModel):
+    """
+    One element of a widget, read from the live DOM. Nothing here is inferred:
+    `role` is the authored role attribute, or the HTML-AAM implicit role for
+    the few native elements that have an unambiguous one (`<button>`,
+    `<a href>`). A `<div class="tab">` with no role is not a tab.
+    """
+    selector: str
+    tag: str
+    role: Optional[str] = None
+    accessible_name: Optional[str] = None
+    # The AUTHORED tabindex attribute, None when absent — same rule as TabStop.
+    tabindex: Optional[int] = None
+    # Every aria-* attribute as authored, plus `id`. Strings, unparsed: the
+    # contract checks decide what a value means.
+    attributes: dict[str, str] = {}
+    # Not rendered to anyone: display:none / visibility:hidden in the chain,
+    # the `hidden` attribute, or inside aria-hidden="true".
+    hidden: bool = False
+    disabled: bool = False
+
+
+class Widget(BaseModel):
+    """
+    A9.2 — one candidate widget, for the Interaction Agent to match against a
+    contract. `items` are what the user moves between: for a container role
+    (tablist, menu, menubar) the elements it owns; for a trigger button with
+    aria-controls, the items of the container it controls. `related` holds
+    every element referenced by id (aria-controls, aria-labelledby, aria-owns)
+    from the root or an item, so structure checks need no second round-trip.
+    """
+    root: WidgetNode
+    items: list[WidgetNode] = []
+    related: list[WidgetNode] = []
+    # Descendants of the root with a positive authored tabindex (SC 2.4.3).
+    positive_tabindex_descendants: list[str] = []
+    # Selector of the nearest ancestor with a roving-tabindex role (tablist,
+    # menu, toolbar, …), or None. A tabindex=-1 root under one is reached by
+    # the arrow keys by design — ARROW_NAVIGABLE, not unreachable.
+    roving_ancestor: Optional[str] = None
+
+
+class WidgetInventory(BaseModel):
+    """A9.2 — every widget on the page that carries explicit ARIA semantics."""
+    widgets: list[Widget] = []
+    # Blind spots, recorded rather than ignored: widgets inside shadow roots or
+    # iframes are not inventoried, and a clean inventory must not imply otherwise.
+    shadow_roots_skipped: int = 0
+    iframes_skipped: int = 0
+
+
+class InteractionStep(BaseModel):
+    """One thing the runner asks the worker to do to a widget."""
+    action: Literal["focus", "press", "click"]
+    # `focus` / `click`: the selector to act on. `press`: unused (keys go to
+    # the focused element). `click` exists for keyboard-PARITY checks: a key
+    # that does nothing is only a keyboard barrier if a click does something.
+    target: Optional[str] = None
+    # `press`: a Playwright key name — "Enter", " ", "ArrowRight", "Tab", …
+    key: Optional[str] = None
+    # What this step is expected to change, so the worker waits for THAT and
+    # not merely the first change of any kind: apple.com's gallery flips
+    # aria-selected at once but moves focus only after its slide animation.
+    # None = any observable change.
+    expect: Optional[Literal["focus"]] = None
+
+
+class InteractionSnapshot(BaseModel):
+    """The widget's observable state after one step (step_index -1 = before any)."""
+    step_index: int
+    # Selector of document.activeElement; None when focus is on the body / left the page.
+    active: Optional[str] = None
+    # Fresh readings of every watched selector that still exists.
+    states: list[WidgetNode] = []
+    missing: list[str] = []
+
+
+class ExerciseResult(BaseModel):
+    """
+    A9.1 — what happened when the steps were played on a widget.
+
+    `complete` is the same honesty flag as TraversalResult's. A9.3's guards
+    (step budget, wall-clock budget, a key that hangs, a page that navigates
+    away) stop the run early and say so; checks that needed the missing
+    snapshots return cantTell, never a verdict.
+    """
+    snapshots: list[InteractionSnapshot] = []
+    steps_requested: int = Field(ge=0)
+    steps_run: int = Field(ge=0)
+    complete: bool
+    incomplete_reason: Optional[str] = None
+    # The widget changed while nobody touched it (an autoplaying carousel or
+    # gallery — apple.com). Effects observed after a key then cannot be
+    # attributed to the key, so driven checks must not judge them.
+    self_changing: bool = False

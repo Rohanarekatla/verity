@@ -1,0 +1,25 @@
+<!doctype html>
+<!--
+  Regression (github.com): the focus ring is drawn by the WRAPPER via
+  :focus-within, and the input itself sets outline:none. The indicator is
+  plainly visible, but the input's own computed style does not change — a
+  style-diff check reported SC 2.4.7 as failed. The pixel confirmation must
+  see the ring. #bare has no indicator anywhere and must still fail.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Focus within</title>
+    <style>
+      .field { display: inline-block; padding: 4px; border-radius: 6px; }
+      .field:focus-within { box-shadow: 0 0 0 3px #0969da; }
+      .field input { outline: none; border: 1px solid #888; padding: 6px; }
+      #bare { outline: none; border: 1px solid #888; padding: 6px; }
+      #bare:focus { outline: none; }
+    </style>
+  </head>
+  <body>
+    <label class="field">Email <input id="wrapped" type="text" /></label>
+    <button id="bare">No indicator</button>
+  </body>
+</html>

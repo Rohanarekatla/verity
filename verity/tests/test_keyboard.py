@@ -217,10 +217,14 @@ def test_zero_and_negative_tabindex_are_legitimate(value):
     assert judge_focus_order(result, HASH).outcome == "pass"
 
 
-def test_unrecorded_tabindex_is_indeterminate():
-    """If Track A didn't record tabindex, we cannot assess focus order."""
-    result = clean_traversal(stops=[stop(0, "#a", tabindex=None)])
-    assert judge_focus_order(result, HASH).outcome == "cantTell"
+def test_absent_tabindex_is_not_unknown():
+    """
+    None is the authored attribute being ABSENT (a plain <button>), per the
+    TabStop contract — not "Track A didn't record it". Reading it as unknown
+    made SC 2.4.3 needs-review on every real page.
+    """
+    result = clean_traversal(stops=[stop(0, "#a", tabindex=None), stop(1, "#b", tabindex=0)])
+    assert judge_focus_order(result, HASH).outcome == "pass"
 
 
 # --- SC 2.4.7 Focus Visible -------------------------------------------------

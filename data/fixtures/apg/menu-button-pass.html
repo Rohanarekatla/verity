@@ -1,0 +1,48 @@
+<!doctype html>
+<!--
+  A9.4 pass fixture for data/apg-contracts/menu-button.yaml. The APG menu
+  button: Enter/Space/ArrowDown open the menu and focus the first item,
+  ArrowUp/ArrowDown move (wrapping), Escape closes and returns focus to the
+  button, aria-expanded tracks the menu. Items use tabindex=-1 (focus managed).
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>APG menu button — pass</title></head>
+  <body>
+    <button id="actions" aria-haspopup="true" aria-controls="actions-menu">Actions</button>
+    <ul role="menu" id="actions-menu" aria-labelledby="actions" hidden>
+      <li role="menuitem" id="mi-1" tabindex="-1">Cut</li>
+      <li role="menuitem" id="mi-2" tabindex="-1">Copy</li>
+      <li role="menuitem" id="mi-3" tabindex="-1">Paste</li>
+    </ul>
+    <button id="after">After the widget</button>
+    <script>
+      const btn = document.getElementById("actions");
+      const menu = document.getElementById("actions-menu");
+      const items = [...menu.querySelectorAll('[role="menuitem"]')];
+      function open(focusIndex) {
+        menu.hidden = false;
+        btn.setAttribute("aria-expanded", "true");
+        items[focusIndex].focus();
+      }
+      function close() {
+        menu.hidden = true;
+        btn.removeAttribute("aria-expanded");
+        btn.focus();
+      }
+      btn.addEventListener("click", () => (menu.hidden ? open(0) : close()));
+      btn.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowDown") { e.preventDefault(); open(0); }
+        if (e.key === "ArrowUp") { e.preventDefault(); open(items.length - 1); }
+      });
+      menu.addEventListener("keydown", (e) => {
+        const i = items.indexOf(document.activeElement);
+        const next = { ArrowDown: (i + 1) % items.length, ArrowUp: (i - 1 + items.length) % items.length,
+                       Home: 0, End: items.length - 1 }[e.key];
+        if (next !== undefined) { e.preventDefault(); items[next].focus(); }
+        else if (e.key === "Escape") { e.preventDefault(); close(); }
+        else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); close(); }
+        else if (e.key === "Tab") { menu.hidden = true; btn.removeAttribute("aria-expanded"); }
+      });
+    </script>
+  </body>
+</html>

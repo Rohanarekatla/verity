@@ -1,0 +1,16 @@
+<!doctype html>
+<!--
+  Regression: an embedded frame with its own controls (like a YouTube player)
+  between two buttons. While Tab moves through the frame, the outer
+  document's activeElement stays the <iframe>; that once read as a keyboard
+  trap and stopped the traversal. It must come back as no trap, with the
+  frame recorded as a blind spot.
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Keyboard iframe</title></head>
+  <body>
+    <button id="before">Before the frame</button>
+    <iframe id="player" title="Embedded player" srcdoc="<button>Play</button><button>Mute</button><button>Captions</button><button>Settings</button><button>Fullscreen</button><a href='#'>Watch later</a>"></iframe>
+    <button id="after">After the frame</button>
+  </body>
+</html>

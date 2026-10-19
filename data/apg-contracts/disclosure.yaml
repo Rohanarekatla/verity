@@ -1,0 +1,138 @@
+# APG contract — Disclosure (show/hide)
+#
+# Week 9 artifact, Track A half (one of A's two independent contracts).
+# Written by hand from the WAI-ARIA Authoring Practices disclosure pattern
+# and the ARIA 1.2 `button` / `aria-expanded` definitions, before the checks in
+# verity/agents/interaction.py. Cross-check against B at the pair session.
+#
+# ---------------------------------------------------------------------------
+# The point of this file
+#
+# A disclosure is the smallest widget there is — one button, one region — and
+# it is also the one most often rebuilt from a <div> with a click handler. A
+# mouse user cannot tell the difference. A keyboard user can: the div reaches
+# focus (tabindex=0), announces as a button, and then ignores Enter and Space.
+# That is the failure this contract exists to catch, and it is invisible to
+# every static check, because every attribute on that div is correct.
+#
+# The false alarm to avoid is the opposite one: <details>/<summary> is a
+# native disclosure with no aria-expanded at all. It is out of scope here
+# (`match` requires aria-expanded) rather than reported as missing it.
+#
+# Keyboard PARITY (added after real-site testing on github.com): an
+# accordion that keeps one panel open ignores Enter on the open header — and
+# ignores a click too. Not a keyboard barrier. So `enter-toggles` /
+# `space-toggles` fail as violations only when NEITHER key works and a click
+# does; one key working is an APG deviation (warning); nothing working for
+# mouse or keyboard is cantTell.
+#
+# Severity vocabulary as in tablist.yaml:
+#   violation -> may gate a build;  warning -> cantTell / NEEDS_REVIEW only.
+
+contract: disclosure
+version: 1
+source:
+  - "WAI-ARIA Authoring Practices Guide — Disclosure (Show/Hide) pattern"
+  - "ARIA 1.2 — role: button; state: aria-expanded"
+wcag:
+  - "2.1.1"   # Keyboard
+  - "4.1.2"   # Name, Role, Value
+
+# A button that reports an expanded state and is NOT a popup trigger.
+# aria-haspopup buttons are menu buttons (menu-button.yaml), not disclosures.
+match:
+  role: button
+  has: [aria-expanded]
+  lacks: [aria-haspopup]
+
+# ---------------------------------------------------------------------------
+# Structure
+# ---------------------------------------------------------------------------
+structure:
+  - id: button-has-accessible-name
+    severity: violation
+    assert: "the disclosure button has a non-empty accessible name"
+    wcag: "4.1.2"
+
+  - id: aria-expanded-is-boolean
+    severity: violation
+    assert: "aria-expanded on the button is exactly 'true' or 'false'"
+    wcag: "4.1.2"
+    note: >
+      An empty or misspelled value ("yes", "") is not a state any assistive
+      technology can report. Absent is out of scope (see `match`).
+
+  - id: controls-references-existing-element
+    severity: warning
+    assert: "when aria-controls is present, it references an element that exists"
+    wcag: "4.1.2"
+    note: >
+      The APG makes aria-controls optional for a disclosure, so its absence is
+      not asserted at all. A dangling reference is an authoring error, but a
+      low-impact one with patchy AT support — a warning, not a gate.
+
+  - id: expanded-state-matches-visibility
+    severity: warning
+    assert: >
+      when aria-expanded=false the controlled content is hidden, and when
+      aria-expanded=true it is shown
+    wcag: "4.1.2"
+    note: >
+      Warning only. Collapse animations keep content rendered (height 0,
+      overflow hidden) for a moment after aria-expanded flips, and we read the
+      state two frames after the key — asserting this as a violation would
+      fire on correct widgets mid-transition. Needs aria-controls to know
+      which content; cantTell without it.
+
+# ---------------------------------------------------------------------------
+# Keyboard
+# ---------------------------------------------------------------------------
+keyboard:
+  - id: button-in-tab-sequence
+    severity: violation
+    assert: "an enabled disclosure button has no negative authored tabindex"
+    wcag: "2.1.1"
+    note: >
+      Unlike a tab inside a tablist, a disclosure button has no arrow-key
+      route to it. tabindex=-1 here is not roving tabindex, it is unreachable.
+
+  - id: enter-toggles
+    severity: violation
+    assert: "with the button focused, Enter flips aria-expanded"
+    wcag: "2.1.1"
+    note: >
+      THE check for this pattern: the click-only <div role="button"> passes
+      every static test and fails this one.
+
+  - id: space-toggles
+    severity: violation
+    assert: "with the button focused, Space flips aria-expanded"
+    wcag: "2.1.1"
+
+  - id: focus-stays-on-button
+    severity: warning
+    assert: "after toggling with the keyboard, focus is still on the button"
+    wcag: "2.4.3"
+    note: >
+      The APG does not move focus into the revealed content. Some designs do,
+      deliberately (an "edit" disclosure that focuses its first field), so
+      moving focus is suspicious rather than wrong.
+
+# ---------------------------------------------------------------------------
+# Deliberately NOT asserted
+# ---------------------------------------------------------------------------
+not_asserted:
+  - "whether the button label describes the content it reveals"
+  - "whether the label text changes between states (\"Show\" / \"Hide\") —
+     both changing and not changing it are valid"
+  - "<details>/<summary> — native, no aria-expanded, out of scope by `match`"
+  - "the content of the revealed region"
+  - "animation timing of the reveal"
+
+reference_implementations:
+  - "APG disclosure example — FAQ"
+  - "APG disclosure example — image description"
+
+fixtures:
+  pass: apg/disclosure-pass.html
+  fail: apg/disclosure-fail.html
