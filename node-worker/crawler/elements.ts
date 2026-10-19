@@ -22,7 +22,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { access, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Page } from "playwright";
 import { log } from "../rpc/log.js";
@@ -45,6 +45,8 @@ export interface ElementCapture {
   box_device: Box;
   /** The scale factor the two are related by, recorded rather than assumed. */
   device_pixel_ratio: number;
+  /** A10.2 — sha256 of the PNG; the file is named by it, so equal crops are one file. */
+  content_hash: string;
 }
 
 /** Elements smaller than this in either axis cannot be screenshotted. */
@@ -76,10 +78,23 @@ async function measure(page: Page, selector: string): Promise<{ box: Box; dpr: n
   }, selector);
 }
 
-/** Stable, filesystem-safe filename for a selector of arbitrary shape. */
-function fileNameFor(selector: string): string {
-  const digest = createHash("sha256").update(selector).digest("hex").slice(0, 16);
-  return `el-${digest}.png`;
+/**
+ * A10.2 — crops are content-addressed: the file is named by the sha256 of its
+ * PNG bytes, and an existing file is never rewritten. The same icon used
+ * twenty times on a page (or across pages) is stored once and every capture
+ * references it, so OCR and vision run once per distinct image, not once per
+ * occurrence. (Named by selector before: the same image under two selectors
+ * was stored twice, and one selector on two pages collided.)
+ */
+async function storeOnce(outDir: string, png: Buffer): Promise<{ path: string; hash: string }> {
+  const hash = createHash("sha256").update(png).digest("hex");
+  const path = join(outDir, `img-${hash.slice(0, 32)}.png`);
+  try {
+    await access(path);
+  } catch {
+    await writeFile(path, png);
+  }
+  return { path, hash };
 }
 
 /**
@@ -104,10 +119,10 @@ export async function captureElement(
   const { box, dpr } = measured;
   if (box.width < MIN_DIMENSION_PX || box.height < MIN_DIMENSION_PX) return null;
 
-  const path = join(outDir, fileNameFor(selector));
+  let stored: { path: string; hash: string };
   try {
     const png = await page.locator(selector).first().screenshot({ type: "png" });
-    await writeFile(path, png);
+    stored = await storeOnce(outDir, png);
   } catch {
     // Off-screen, covered, or detached between measuring and shooting.
     return null;
@@ -115,7 +130,8 @@ export async function captureElement(
 
   return {
     selector,
-    path,
+    path: stored.path,
+    content_hash: stored.hash,
     box_css: box,
     box_device: {
       x: box.x * dpr,
