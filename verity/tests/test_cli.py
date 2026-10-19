@@ -138,5 +138,21 @@ async def test_write_baseline_flag_records_findings(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_run_cli_scan_invalid_url():
+    """A scan that could not run exits 2, never 1: 1 means "gating findings"."""
     exit_code = await run_cli_scan(url="", timeout=2.0)
-    assert exit_code == 1
+    assert exit_code == 2
+
+
+def test_local_paths_become_file_urls(tmp_path):
+    from verity.cli import normalize_target
+
+    page = tmp_path / "index.html"
+    page.write_text("<!doctype html><title>t</title>")
+    assert normalize_target(str(page)) == page.resolve().as_uri()
+    assert normalize_target("https://example.com") == "https://example.com"
+    assert normalize_target("file:///x.html") == "file:///x.html"
+    # Not a URL and not an existing file: passed through, so the error names it.
+    assert normalize_target("no-such-page.html") == "no-such-page.html"
+    # A directory is not a page.
+    assert normalize_target(str(tmp_path)) == str(tmp_path)
+    assert normalize_target("") == ""

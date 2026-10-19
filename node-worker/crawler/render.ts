@@ -31,7 +31,7 @@ const CACHE_ROOT = join(process.cwd(), ".verity", "cache");
 const VIEWPORT = { width: 1280, height: 800 } as const;
 
 /**
- * DOM-mutation settle window, applied after networkidle.
+ * DOM-mutation settle window, applied after load + (best-effort) networkidle.
  *
  * networkidle alone is not enough for SPAs: a client-side render pass can
  * mutate the DOM well after the last network request settles, and capturing
@@ -41,6 +41,9 @@ const VIEWPORT = { width: 1280, height: 800 } as const;
  * ones. CAP_MS bounds the wait so a page that mutates forever (carousels,
  * animated counters, polling widgets) still gets captured.
  */
+const NAV_TIMEOUT_MS = 45_000;
+const LOAD_WAIT_MS = 15_000;
+const IDLE_WAIT_MS = 8_000;
 const SETTLE_QUIET_MS = 500;
 const SETTLE_CAP_MS = 10_000;
 
@@ -121,6 +124,11 @@ export async function render(url: string, opts: RenderOptions = {}): Promise<Ren
   const context = await browser.newContext({
     viewport: VIEWPORT,
     deviceScaleFactor: opts.deviceScaleFactor ?? 1,
+    // We inject axe-core as an inline script. A strict Content-Security-Policy
+    // (gov.uk, github.com, …) blocks that, and the scan used to die on exactly
+    // the sites most likely to care about accessibility. Bypassing CSP only
+    // affects our own instrumentation; the page renders as it would anyway.
+    bypassCSP: true,
   });
   const page = await context.newPage();
 
@@ -137,11 +145,18 @@ export async function render(url: string, opts: RenderOptions = {}): Promise<Ren
   });
 
   try {
-    await page.goto(url, { waitUntil: "networkidle", timeout: 60_000 });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
   } catch (err) {
     await context.close();
     throw new Error(`navigation to ${url} failed: ${err instanceof Error ? err.message : String(err)}`);
   }
+  // `load` and `networkidle` are best-effort, bounded waits — not
+  // requirements. Real sites with analytics beacons, long-polling or
+  // streaming (github.com, stripe.com, bbc.co.uk) never reach networkidle,
+  // and requiring it made every scan of them time out. The DOM-settle window
+  // below is what actually decides the page is ready to capture.
+  await page.waitForLoadState("load", { timeout: LOAD_WAIT_MS }).catch(() => {});
+  await page.waitForLoadState("networkidle", { timeout: IDLE_WAIT_MS }).catch(() => {});
 
   await waitForDomSettle(page, SETTLE_QUIET_MS, SETTLE_CAP_MS);
 

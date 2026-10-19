@@ -29,6 +29,7 @@ No model is involved anywhere in this file.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Awaitable, Callable, Literal, Optional
@@ -58,7 +59,14 @@ logger = logging.getLogger(__name__)
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "data" / "fixtures"
 
 AssertionOutcome = Literal["pass", "fail", "cantTell", "notChecked"]
-Verdict = tuple[AssertionOutcome, str]
+# (outcome, detail), or (outcome, detail, APG_ONLY) for a failure that breaks
+# the APG pattern but is not a WCAG barrier — e.g. every tab in a tablist is
+# in the Tab order (no roving tabindex): un-idiomatic, but every tab is still
+# reachable. Such a result is reported at `warning` severity whatever the
+# contract says, so it is reviewed and never gates. Verity is a WCAG
+# conformance engine; APG is how we know what to test, not the bar we gate on.
+Verdict = tuple
+APG_ONLY = "apg-only"
 
 
 class AssertionResult(BaseModel):
@@ -85,7 +93,12 @@ class InteractionBudget(BaseModel):
     """
     max_widgets: int = 50
     max_steps_per_widget: int = 40
-    max_ms_per_widget: int = 10_000
+    # Worst case is every step inert, each waiting out the worker's effect
+    # window (~1.2 s) — a tablist probe is 9 steps.
+    max_ms_per_widget: int = 20_000
+    # The whole page. Widgets left when it runs out are listed in
+    # `widgets_skipped`, exactly like those beyond `max_widgets`.
+    max_ms_per_page: int = 120_000
 
 
 class ContractRun(BaseModel):
@@ -195,7 +208,13 @@ def _tab_sequence_verdict(widget: Widget) -> Verdict:
         return ("cantTell", f"tabindex={root.tabindex} inside roving-tabindex widget "
                             f"{widget.roving_ancestor}; reached by arrow keys by design")
     if _out_of_tab_order(root):
-        return ("fail", f"tabindex={root.tabindex} removes it from the Tab sequence")
+        # Same rule as the traversal's UNKNOWN: tabindex=-1 outside a known
+        # roving pattern may still be reached by a key route the page provides.
+        # Whether it is reachable at all is what the tab-order traversal
+        # measures (SC 2.1.1); asserting it here from the attribute alone was
+        # a false alarm on stripe.com's navigation.
+        return ("cantTell", f"tabindex={root.tabindex} takes it out of the Tab sequence; "
+                            "reachability is judged by the tab-order traversal")
     return ("pass", "reachable by Tab")
 
 
@@ -206,7 +225,7 @@ def _missing_snapshot(run: Optional[ExerciseResult]) -> str:
 
 
 def _trace(steps: list[InteractionStep]) -> list[str]:
-    return [f"focus {s.target}" if s.action == "focus" else f"press {s.key!r}" for s in steps]
+    return [f"press {s.key!r}" if s.action == "press" else f"{s.action} {s.target}" for s in steps]
 
 
 # --- pattern checks ---------------------------------------------------------
@@ -229,8 +248,41 @@ def _press(key: str) -> InteractionStep:
     return InteractionStep(action="press", key=key)
 
 
+def _move(key: str) -> InteractionStep:
+    """A key whose effect is moving focus (arrows, Home/End, Tab)."""
+    return InteractionStep(action="press", key=key, expect="focus")
+
+
 def _focus(selector: str) -> InteractionStep:
     return InteractionStep(action="focus", target=selector)
+
+
+def _click(selector: str) -> InteractionStep:
+    return InteractionStep(action="click", target=selector)
+
+
+def _key_parity(key: str, key_worked: bool, other_key: str, other_worked: bool,
+                click_worked: Optional[bool], effect: str) -> Verdict:
+    """
+    WCAG 2.1.1 asks whether the widget can be operated from the keyboard — not
+    whether every APG key works. So a key that does nothing is:
+
+    - a barrier (fail) only when the OTHER key fails too and a mouse click
+      does have the effect: the keyboard user is locked out of something a
+      mouse user can do;
+    - an APG deviation (fail, APG_ONLY) when the other key works;
+    - undecided when a click has no effect either — an accordion that keeps
+      one panel open behaves the same for mouse and keyboard (github.com).
+    """
+    if key_worked:
+        return ("pass", f"{key} can {effect}")
+    if other_worked:
+        return ("fail", f"{key} cannot {effect}, but {other_key} can", APG_ONLY)
+    if click_worked is None:
+        return ("cantTell", f"neither {key} nor {other_key} can {effect}, and a click could not be compared")
+    if click_worked:
+        return ("fail", f"a click can {effect}, but neither {key} nor {other_key} can")
+    return ("cantTell", f"neither {key}, {other_key} nor a click can {effect} — not a keyboard-only difference")
 
 
 # tablist ------------------------------------------------------------------
@@ -262,14 +314,14 @@ def _tablist_plan(widget: Widget) -> list[InteractionStep]:
     start, selected = _tab_roles(widget)
     return [
         _focus(selected.selector),  # 0
-        _press("Tab"),              # 1  tab-moves-out-of-the-tablist
+        _move("Tab"),               # 1  tab-moves-out-of-the-tablist
         _focus(start.selector),     # 2
-        _press(nxt),                # 3  arrow-keys-move-between-tabs
-        _press(prv),                # 4
-        _press("End"),              # 5  home-end-keys
-        _press("Home"),             # 6
-        _press("End"),              # 7  arrow-wrapping-is-optional
-        _press(nxt),                # 8
+        _move(nxt),                 # 3  arrow-keys-move-between-tabs
+        _move(prv),                 # 4
+        _move("End"),               # 5  home-end-keys
+        _move("Home"),              # 6
+        _move("End"),               # 7  arrow-wrapping-is-optional
+        _move(nxt),                 # 8
     ]
 
 
@@ -289,8 +341,10 @@ def _tablist_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict[str
     # Structure: controls, panels, names, selection.
     dangling = [t.selector for t in tabs if not _ids(t.attributes.get("aria-controls"))
                 or any(_related_by_id(widget, i) is None for i in _ids(t.attributes.get("aria-controls")))]
+    # Missing/dangling aria-controls is an APG authoring error with patchy AT
+    # support — reported, never a WCAG barrier on its own.
     v["tab-controls-a-panel"] = (
-        ("fail", f"no resolvable aria-controls on: {', '.join(dangling)}") if dangling
+        ("fail", f"no resolvable aria-controls on: {', '.join(dangling)}", APG_ONLY) if dangling
         else ("pass", "every tab's aria-controls resolves")
     )
 
@@ -331,10 +385,15 @@ def _tablist_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict[str
     # Keyboard, static half.
     in_seq = [t for t in tabs if _in_tab_sequence(t)]
     others_ok = all(t.tabindex == -1 for t in tabs if t not in in_seq[:1])
-    v["roving-tabindex"] = (
-        ("pass", "one tab in the Tab sequence, the rest tabindex=-1") if len(in_seq) == 1 and others_ok
-        else ("fail", f"{len(in_seq)} tabs are in the Tab sequence; a tablist exposes exactly one")
-    )
+    if len(in_seq) == 1 and others_ok:
+        v["roving-tabindex"] = ("pass", "one tab in the Tab sequence, the rest tabindex=-1")
+    elif not in_seq:
+        v["roving-tabindex"] = ("fail", "no tab is in the Tab sequence; the tablist cannot be reached by Tab")
+    else:
+        # Every tab still reachable by Tab: not idiomatic, not a barrier.
+        v["roving-tabindex"] = (
+            "fail", f"{len(in_seq)} tabs are in the Tab sequence; a tablist exposes exactly one", APG_ONLY)
+    arrows_required = any(t.tabindex == -1 for t in tabs)
     positive = list(widget.positive_tabindex_descendants)
     if widget.root.tabindex is not None and widget.root.tabindex > 0:
         positive.append(widget.root.selector)
@@ -357,8 +416,12 @@ def _tablist_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict[str
         v["tab-moves-out-of-the-tablist"] = ("cantTell", _missing_snapshot(run))
     elif s0.active != selected.selector:
         v["tab-moves-out-of-the-tablist"] = ("cantTell", "focus did not land on the selected tab")
+    elif s1.active == selected.selector:
+        v["tab-moves-out-of-the-tablist"] = ("fail", "Tab did not move focus off the selected tab")
     elif s1.active in sels:
-        v["tab-moves-out-of-the-tablist"] = ("fail", f"Tab from the selected tab moved to {s1.active}, still inside the tablist")
+        # Focus kept moving — onto the next tab. Not a trap; un-idiomatic.
+        v["tab-moves-out-of-the-tablist"] = (
+            "fail", f"Tab from the selected tab moved to {s1.active}, still inside the tablist", APG_ONLY)
     else:
         v["tab-moves-out-of-the-tablist"] = ("pass", f"Tab moved focus out to {s1.active or 'the end of the page'}")
 
@@ -374,11 +437,14 @@ def _tablist_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict[str
     elif s3.active == sels[i + 1] and s4.active == sels[i]:
         v["arrow-keys-move-between-tabs"] = ("pass", "next/previous arrow moved focus to the adjacent tab and back")
     elif s3.active == start.selector or s3.active not in sels:
+        # A barrier only when arrows are the sole route to the other tabs.
         v["arrow-keys-move-between-tabs"] = (
-            "fail", f"the next-tab arrow key left focus on {s3.active or 'the page'}, not the next tab")
+            "fail", f"the next-tab arrow key left focus on {s3.active or 'the page'}, not the next tab",
+            *(() if arrows_required else (APG_ONLY,)))
     elif s4.active not in sels or s4.active == s3.active:
         v["arrow-keys-move-between-tabs"] = (
-            "fail", f"the previous-tab arrow key left focus on {s4.active or 'the page'}")
+            "fail", f"the previous-tab arrow key left focus on {s4.active or 'the page'}",
+            *(() if arrows_required else (APG_ONLY,)))
     else:
         v["arrow-keys-move-between-tabs"] = ("cantTell", "focus moved between tabs, but not to the adjacent one")
 
@@ -410,7 +476,9 @@ def _controlled(widget: Widget) -> Optional[WidgetNode]:
 
 
 def _disclosure_plan(widget: Widget) -> list[InteractionStep]:
-    return [_focus(widget.root.selector), _press("Enter"), _press(" ")]
+    root = widget.root.selector
+    # 3: a click, for keyboard parity (see _key_parity).
+    return [_focus(root), _press("Enter"), _press(" "), _click(root)]
 
 
 def _expanded(snap: Optional[InteractionSnapshot], widget: Widget) -> Optional[str]:
@@ -457,23 +525,28 @@ def _disclosure_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict[
             if mismatched else ("pass", "aria-expanded tracks the content's visibility")
         )
 
+    s3 = _after(run, 3)
+    enter_flips = (s0 is not None and s1 is not None and s0.active == root.selector
+                   and _expanded(s0, widget) != _expanded(s1, widget))
+    space_flips = (s1 is not None and s2 is not None and s1.active == root.selector
+                   and _expanded(s1, widget) != _expanded(s2, widget))
+    click_flips = None if s3 is None or s2 is None else _expanded(s2, widget) != _expanded(s3, widget)
+
     if s0 is None or s1 is None:
         v["enter-toggles"] = ("cantTell", _missing_snapshot(run))
     elif s0.active != root.selector:
         v["enter-toggles"] = ("cantTell", "focus did not land on the button")
-    elif _expanded(s0, widget) == _expanded(s1, widget):
-        v["enter-toggles"] = ("fail", f"Enter left aria-expanded={_expanded(s1, widget)}")
     else:
-        v["enter-toggles"] = ("pass", f"Enter: aria-expanded {_expanded(s0, widget)} -> {_expanded(s1, widget)}")
+        v["enter-toggles"] = _key_parity("Enter", enter_flips, "Space", space_flips, click_flips,
+                                         "toggle aria-expanded")
 
     if s1 is None or s2 is None:
         v["space-toggles"] = ("cantTell", _missing_snapshot(run))
     elif s1.active != root.selector:
         v["space-toggles"] = ("cantTell", "focus was no longer on the button before Space")
-    elif _expanded(s1, widget) == _expanded(s2, widget):
-        v["space-toggles"] = ("fail", f"Space left aria-expanded={_expanded(s2, widget)}")
     else:
-        v["space-toggles"] = ("pass", f"Space: aria-expanded {_expanded(s1, widget)} -> {_expanded(s2, widget)}")
+        v["space-toggles"] = _key_parity("Space", space_flips, "Enter", enter_flips, click_flips,
+                                         "toggle aria-expanded")
 
     if s0 is None or s1 is None or s2 is None:
         v["focus-stays-on-button"] = ("cantTell", _missing_snapshot(run))
@@ -492,10 +565,12 @@ def _menu_button_plan(widget: Widget) -> list[InteractionStep]:
     return [
         _focus(widget.root.selector),  # 0
         _press("Enter"),               # 1  enter-opens-menu, open-focuses-first-item
-        _press("ArrowDown"),           # 2  arrow-down-moves-to-next-item
+        _move("ArrowDown"),            # 2  arrow-down-moves-to-next-item
         _press("Escape"),              # 3  escape-closes-and-returns-focus
         _press(" "),                   # 4  space-opens-menu
         _press("Escape"),              # 5  leave it closed
+        _click(widget.root.selector),  # 6  keyboard parity: does a click open it?
+        _press("Escape"),              # 7  and close again
     ]
 
 
@@ -573,25 +648,35 @@ def _menu_button_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict
     else:
         v["items-use-managed-focus"] = ("fail", f"menuitems without tabindex=-1: {', '.join(unmanaged)}")
 
+    s5, s6 = _after(run, 5), _after(run, 6)
+    space_ready = s3 is not None and s4 is not None and is_open(s3) is False and s3.active == root.selector
+    space_opens = space_ready and bool(is_open(s4))
+    click_opens = None if s5 is None or s6 is None or is_open(s5) is not False else bool(is_open(s6))
+    # Items only reachable through the menu's own key handling (tabindex=-1):
+    # then focus not moving into the menu, or ArrowDown not moving, locks the
+    # keyboard user out. Otherwise Tab still gets there — an APG deviation.
+    keys_required = () if all(i.tabindex == -1 for i in items) else (APG_ONLY,)
+
     opened_by_enter = False
     if s0 is None or s1 is None:
         v["enter-opens-menu"] = ("cantTell", _missing_snapshot(run))
     elif s0.active != root.selector or is_open(s0) is not False:
         v["enter-opens-menu"] = ("cantTell", "precondition not met: button focused with the menu closed")
-    elif is_open(s1):
-        v["enter-opens-menu"] = ("pass", "Enter displayed the menu")
-        opened_by_enter = True
     else:
-        v["enter-opens-menu"] = ("fail", "Enter did not display the menu")
+        opened_by_enter = bool(is_open(s1))
+        v["enter-opens-menu"] = _key_parity("Enter", opened_by_enter, "Space", space_opens, click_opens,
+                                            "open the menu")
 
     if not opened_by_enter:
         v["open-focuses-first-item"] = ("cantTell", "the menu was not opened by Enter")
     elif focused_item(s1) == sels[0]:
         v["open-focuses-first-item"] = ("pass", "focus moved to the first menuitem")
     else:
-        v["open-focuses-first-item"] = ("fail", f"after opening, focus is on {s1.active or 'the page'}, not the first menuitem")
+        v["open-focuses-first-item"] = (
+            "fail", f"after opening, focus is on {s1.active or 'the page'}, not the first menuitem",
+            *keys_required)
 
-    open_snaps = [s for s in (s1, s2, s3, s4, _after(run, 5)) if s is not None and is_open(s)]
+    open_snaps = [s for s in (s1, s2, s3, s4, s5, s6) if s is not None and is_open(s)]
     if not open_snaps:
         v["expanded-true-when-open"] = ("cantTell", "the menu was never displayed")
     else:
@@ -609,7 +694,8 @@ def _menu_button_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict
     elif focused_item(s2) == sels[1]:
         v["arrow-down-moves-to-next-item"] = ("pass", "ArrowDown moved to the second menuitem")
     elif focused_item(s2) in (None, sels[0]):
-        v["arrow-down-moves-to-next-item"] = ("fail", f"ArrowDown left focus on {focused_item(s2) or s2.active or 'the page'}")
+        v["arrow-down-moves-to-next-item"] = (
+            "fail", f"ArrowDown left focus on {focused_item(s2) or s2.active or 'the page'}", *keys_required)
     else:
         v["arrow-down-moves-to-next-item"] = ("cantTell", "focus moved within the menu, but not to the next item")
 
@@ -621,12 +707,11 @@ def _menu_button_evaluate(widget: Widget, run: Optional[ExerciseResult]) -> dict
         v["escape-closes-and-returns-focus"] = (
             "fail", f"after Escape the menu is {'open' if is_open(s3) else 'closed'} and focus is on {s3.active or 'the page'}")
 
-    if s3 is None or s4 is None or is_open(s3) is not False or s3.active != root.selector:
+    if not space_ready:
         v["space-opens-menu"] = ("cantTell", "precondition not met: button focused with the menu closed")
-    elif is_open(s4):
-        v["space-opens-menu"] = ("pass", "Space displayed the menu")
     else:
-        v["space-opens-menu"] = ("fail", "Space did not display the menu")
+        v["space-opens-menu"] = _key_parity("Space", space_opens, "Enter", opened_by_enter, click_opens,
+                                            "open the menu")
     return v
 
 
@@ -667,13 +752,26 @@ async def run_contracts(
         widgets_matched={name: 0 for name in contracts},
     )
     exercised = 0
+    started = time.monotonic()
 
     for widget in inventory.widgets:
         for contract in contracts.values():
             if not matches(contract.match, widget):
                 continue
             out.widgets_matched[contract.contract] += 1
-            if exercised >= budget.max_widgets:
+            if widget.root.hidden:
+                # Not rendered at scan time (a mobile-only nav duplicate, a
+                # closed panel's contents): nothing a user can operate now.
+                for section in ("structure", "keyboard"):
+                    for a in getattr(contract, section):
+                        out.results.append(AssertionResult(
+                            contract=contract.contract, assertion_id=a.id, severity=a.severity,
+                            wcag=a.wcag, section=section, widget=widget.root.selector,
+                            outcome="notChecked", detail="widget not rendered at scan time",
+                        ))
+                continue
+            if (exercised >= budget.max_widgets
+                    or (time.monotonic() - started) * 1000 > budget.max_ms_per_page):
                 out.widgets_skipped.append(widget.root.selector)
                 continue
             exercised += 1
@@ -690,6 +788,15 @@ async def run_contracts(
                         widget.root.selector,
                         exc.__class__.__name__,
                     )
+                if run is not None and run.self_changing:
+                    # Autoplay: effects after a key may be the timer's. The
+                    # static checks still stand; the driven ones cannot judge.
+                    run = run.model_copy(update={
+                        "snapshots": [],
+                        "complete": False,
+                        "incomplete_reason": "the widget changes on its own (autoplay or animation), "
+                                             "so effects cannot be attributed to keys",
+                    })
             verdicts = checks.evaluate(widget, run) if checks else {}
 
             sections = {a.id: (sec, a) for sec in ("structure", "keyboard")
@@ -701,15 +808,20 @@ async def run_contracts(
                     f"contract does not define: {stray}"
                 )
             for aid, (section, assertion) in sections.items():
-                outcome, detail = verdicts.get(
+                verdict = verdicts.get(
                     aid,
                     ("notChecked", "no check is implemented for this assertion" if checks
                      else "no checks are implemented for this contract"),
                 )
+                outcome, detail = verdict[0], verdict[1]
+                severity = assertion.severity
+                if len(verdict) > 2 and verdict[2] == APG_ONLY:
+                    severity = Severity.WARNING
+                    detail = f"APG deviation, not a WCAG barrier: {detail}"
                 out.results.append(AssertionResult(
                     contract=contract.contract,
                     assertion_id=aid,
-                    severity=assertion.severity,
+                    severity=severity,
                     wcag=assertion.wcag,
                     section=section,
                     widget=widget.root.selector,

@@ -195,3 +195,55 @@ test("focus_visible stays null when not measured, becomes a boolean when asked (
     s.close();
   }
 });
+
+test("focus moving through an iframe's own controls is not a keyboard trap", async () => {
+  const s = session();
+  try {
+    const aid = await render(s, "keyboard-iframe.html");
+    const r = await traverse(s, aid);
+    assert.equal(r.trap_detected, false, "an embedded player is not a trap");
+    const sels = r.stops.map((x) => x.selector);
+    assert.ok(sels.includes("#after"), `traversal must continue past the frame, got ${JSON.stringify(sels)}`);
+    assert.ok(r.unreached.some((u) => u.reason === "iframe"), "the frame is recorded as a blind spot");
+  } finally {
+    s.close();
+  }
+});
+
+test("a trapped traversal is reported incomplete, so later elements are not called unreachable", async () => {
+  const s = session();
+  try {
+    const aid = await render(s, "keyboard-trap.html");
+    const r = await traverse(s, aid);
+    assert.equal(r.trap_detected, true);
+    assert.equal(r.complete, false, "stops after the trap were never visited");
+    assert.match(r.incomplete_reason, /keyboard trap/);
+  } finally {
+    s.close();
+  }
+});
+
+test("a focus ring drawn by a wrapper (:focus-within) counts as visible; none at all does not", async () => {
+  const s = session();
+  try {
+    const aid = await render(s, "keyboard-focus-within.html");
+    const r = await traverse(s, aid, { measureFocusVisible: true });
+    const by = Object.fromEntries(r.stops.map((x) => [x.selector, x.focus_visible]));
+    assert.equal(by["#wrapped"], true, "github.com pattern: the wrapper's ring is a visible indicator");
+    assert.equal(by["#bare"], false, "no indicator anywhere is still a real failure");
+  } finally {
+    s.close();
+  }
+});
+
+test("a control enabled during the traversal is not reported as a barrier", async () => {
+  const s = session();
+  try {
+    const aid = await render(s, "keyboard-dynamic-enable.html");
+    const r = await traverse(s, aid, { cyclesRequested: 1 });
+    const prev = r.unreached.find((u) => u.selector === "#prev");
+    if (prev) assert.notEqual(prev.reason, "not-focusable", `got ${JSON.stringify(prev)}`);
+  } finally {
+    s.close();
+  }
+});

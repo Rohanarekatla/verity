@@ -19,6 +19,13 @@
 # native disclosure with no aria-expanded at all. It is out of scope here
 # (`match` requires aria-expanded) rather than reported as missing it.
 #
+# Keyboard PARITY (added after real-site testing on github.com): an
+# accordion that keeps one panel open ignores Enter on the open header — and
+# ignores a click too. Not a keyboard barrier. So `enter-toggles` /
+# `space-toggles` fail as violations only when NEITHER key works and a click
+# does; one key working is an APG deviation (warning); nothing working for
+# mouse or keyboard is cantTell.
+#
 # Severity vocabulary as in tablist.yaml:
 #   violation -> may gate a build;  warning -> cantTell / NEEDS_REVIEW only.
 

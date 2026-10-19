@@ -99,18 +99,22 @@ test("background samples are a set with counts, most common first (A3.3)", async
   }
 });
 
-test("text over a busy image is flagged ambiguous, not falsely passed", async () => {
+test("text over a busy image: both image colours behind the glyphs are measured", async () => {
   const s = session();
   try {
     const aid = await render(s, "contrast-sampling.html");
     s.send(2, "sampleRegion", { artifactId: aid, selector: "#over-image" });
     const r = (await s.waitFor(2)).result;
 
-    // Light patches of the image are near-white, get swallowed into the text
-    // class, and would otherwise hide a white-on-light failure. The flag keeps
-    // the adjudicator honest (needs_review, never a silent pass).
-    assert.equal(r.ambiguous, true, "near-foreground background must flag ambiguous");
-    assert.ok(r.text_pixel_count > r.background_pixel_count, "text pixels dominate → the signal");
+    // The two-shot method reads the real pixels behind the letters, so the
+    // checkerboard's dark AND light squares both come back — the light one is
+    // where white text fails. (The old colour-distance split could not
+    // separate them and had to give up as "ambiguous".)
+    assert.equal(r.ambiguous, false);
+    const colours = r.background_samples.map((b) => `${b.r},${b.g},${b.b}`);
+    assert.ok(colours.includes("32,32,32"), `dark square sampled, got ${colours}`);
+    assert.ok(colours.includes("232,232,232"), `light square sampled, got ${colours}`);
+    assert.ok(r.text_pixel_count > 0, "glyph cores found");
   } finally {
     s.close();
   }
@@ -130,6 +134,55 @@ test("the rendered font is measured, and a mixed region says so (BC-A2)", async 
     const mixed = (await s.waitFor(3)).result;
     assert.equal(mixed.font_uniform, false, "two sizes in one region is not uniform");
     assert.equal(mixed.font_size_px, 12, "the smallest size is reported for the record");
+  } finally {
+    s.close();
+  }
+});
+
+test("SVG text is sampled with its fill, not the CSS color", async () => {
+  const s = session();
+  try {
+    const aid = await render(s, "vision-gallery.html");
+    s.send(2, "sampleRegion", { artifactId: aid, selector: '#v-sale text[y="72"]' });
+    const r = (await s.waitFor(2)).result;
+    assert.deepEqual(r.foreground, { r: 255, g: 255, b: 255 }, "fill=#fff, not the inherited black");
+    assert.ok(r.text_pixel_count > 0, "the white glyphs are found");
+  } finally {
+    s.close();
+  }
+});
+
+test("transitions are frozen: sampling one link does not leave the next mid-fade", async () => {
+  const s = session();
+  try {
+    const aid = await render(s, "contrast-sampling.html");
+    s.send(2, "sampleRegion", { artifactId: aid, selector: "#fade-a" });
+    const a = (await s.waitFor(2)).result;
+    s.send(3, "sampleRegion", { artifactId: aid, selector: "#fade-b" });
+    const b = (await s.waitFor(3)).result;
+    for (const r of [a, b]) {
+      assert.equal(r.ambiguous, false, `${r.selector} measured cleanly`);
+      assert.deepEqual(
+        { r: r.background_samples[0].r, g: r.background_samples[0].g, b: r.background_samples[0].b },
+        { r: 0, g: 0, b: 0 },
+        `${r.selector}: black behind the link`,
+      );
+      assert.ok(r.text_pixel_count > 20, `${r.selector}: glyphs fully opaque, got ${r.text_pixel_count}`);
+    }
+  } finally {
+    s.close();
+  }
+});
+
+test("background-clip:text is ambiguous; aria-hidden is reported", async () => {
+  const s = session();
+  try {
+    const aid = await render(s, "contrast-sampling.html");
+    s.send(2, "sampleRegion", { artifactId: aid, selector: "#clip-text" });
+    assert.equal((await s.waitFor(2)).result.ambiguous, true, "CSS color is not the painted colour");
+    s.send(3, "sampleRegion", { artifactId: aid, selector: "#decor" });
+    const d = (await s.waitFor(3)).result;
+    assert.equal(d.aria_hidden, true);
   } finally {
     s.close();
   }

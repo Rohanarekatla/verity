@@ -163,9 +163,16 @@ runs:
           echo "Baseline run — not gating."
           exit 0
         fi
-        if [ "${{ steps.scan.outputs.exit_code }}" != "0" ]; then
-          echo "::error::Verity found gating accessibility findings (exit ${{ steps.scan.outputs.exit_code }})."
+        code="${{ steps.scan.outputs.exit_code }}"
+        if [ "$code" = "1" ]; then
+          echo "::error::Verity found gating accessibility findings."
           exit 1
+        fi
+        if [ "$code" != "0" ]; then
+          # Exit 2 (or anything else): the scan itself did not complete. That
+          # is not an accessibility verdict and must not read as one.
+          echo "::error::Verity could not complete the scan (exit $code) — no accessibility verdict was reached. See the 'Run Verity scan' step log."
+          exit "$code"
         fi
         echo "No gating findings."
 

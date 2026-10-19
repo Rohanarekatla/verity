@@ -19,6 +19,13 @@
 # either a `warning` or listed under `not_asserted`, never a violation.
 #
 # Severity vocabulary as in tablist.yaml.
+#
+# Keyboard PARITY (added after real-site testing): a key that fails is a WCAG
+# barrier only when the other activation key fails too AND a mouse click
+# succeeds. Space failing while Enter works is reported as an APG deviation;
+# nothing working for mouse or keyboard is not a keyboard-only difference.
+# Likewise focus/arrow failures are barriers only when the menuitems are
+# tabindex=-1 (reachable solely through the menu's own keys).
 
 contract: menu-button
 version: 1
@@ -105,9 +112,13 @@ keyboard:
     wcag: "2.1.1"
 
   - id: escape-closes-and-returns-focus
-    severity: violation
+    severity: warning
     assert: "with the menu open, Escape hides it and returns focus to the button"
     wcag: "2.4.3"
+    note: >
+      Warning, not violation (revised after real-site testing, 2026-10-18):
+      without Escape a keyboard user can still Tab away, so a missing Escape
+      is APG etiquette rather than a WCAG barrier.
 
   - id: space-opens-menu
     severity: violation

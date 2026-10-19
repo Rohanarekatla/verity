@@ -93,10 +93,39 @@ def report_expired_waivers(waivers_path: Optional[str] = None) -> list[str]:
     return [item.describe() for item in expired]
 
 
+# Exit codes. 1 and 2 must stay distinct: in CI, 1 means "this page has
+# gating accessibility failures", and a scan that crashed (site unreachable,
+# render timeout, worker missing) is not evidence of any. Reporting a crash as
+# exit 1 told a pipeline the site was inaccessible when we had not looked.
+EXIT_OK = 0
+EXIT_GATING_FINDINGS = 1
+EXIT_SCAN_ERROR = 2
+
+# A real page (load, best-effort network idle, DOM settle, full-page capture)
+# can legitimately take over a minute; 30s timed out on github.com and friends.
+DEFAULT_TIMEOUT_S = 120.0
+
+
+def normalize_target(target: str) -> str:
+    """
+    Accept a local file path as well as a URL. `verity scan ./dist/index.html`
+    is the first thing a new user types, and it used to fail with Playwright's
+    "Cannot navigate to invalid URL".
+    """
+    if not target or "://" in target or target.startswith(("about:", "data:")):
+        return target
+    path = Path(target).expanduser()
+    # Files only: a directory would render Chromium's folder listing and be
+    # audited as though it were a page.
+    if path.is_file():
+        return path.resolve().as_uri()
+    return target
+
+
 async def run_cli_scan(
     url: str,
     output_path: Optional[str] = None,
-    timeout: float = 30.0,
+    timeout: float = DEFAULT_TIMEOUT_S,
     worker_cmd: Optional[list[str]] = None,
     sarif_path: Optional[str] = None,
     junit_path: Optional[str] = None,
@@ -112,6 +141,7 @@ async def run_cli_scan(
         policy = load_policy(config_path)
         logger.info("CI policy: %s", policy.describe())
 
+        url = normalize_target(url)
         logger.info(f"Starting scan for URL: {url}")
         report: AuditReport = await scan_url(
             url=url, node_worker_command=worker_cmd, timeout=timeout
@@ -201,8 +231,11 @@ async def run_cli_scan(
         return 0
 
     except Exception as exc:
-        logger.error(f"Scan failed: {exc}")
-        return 1
+        logger.error(
+            f"Scan failed: {exc or exc.__class__.__name__}. "
+            f"No accessibility verdict was reached (exit {EXIT_SCAN_ERROR})."
+        )
+        return EXIT_SCAN_ERROR
 
 
 def main() -> None:
@@ -210,18 +243,23 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="verity",
         description="VERITY: WCAG Accessibility Conformance Engine CLI",
+        epilog="Exit codes: 0 no gating findings, 1 gating findings, 2 the scan could not complete.",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
     # 'scan' command parser
     scan_parser = subparsers.add_parser("scan", help="Scan a target URL for WCAG violations")
-    scan_parser.add_argument("url", type=str, help="Target URL to audit (e.g., https://example.com)")
+    scan_parser.add_argument(
+        "url", type=str,
+        help="Target URL or local HTML file (e.g., https://example.com or ./dist/index.html)",
+    )
     scan_parser.add_argument(
         "-o", "--output", type=str, default=None, help="File path to save JSON report output"
     )
     scan_parser.add_argument(
-        "-t", "--timeout", type=float, default=30.0, help="RPC request timeout in seconds (default: 30.0)"
+        "-t", "--timeout", type=float, default=DEFAULT_TIMEOUT_S,
+        help=f"RPC request timeout in seconds (default: {DEFAULT_TIMEOUT_S:g})"
     )
     scan_parser.add_argument(
         "--worker-cmd",
