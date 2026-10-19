@@ -369,7 +369,14 @@ def test_cli_surfaces_a_broken_waiver_file_rather_than_ignoring_it(tmp_path, cap
     """
     If we cannot tell which findings are suppressed, continuing as though
     none were would be a guess about someone's accessibility policy.
+
+    It must also *raise*, not return. Returning made it look like an ordinary
+    expired waiver, which the CLI mapped to exit 1 ("this page has gating
+    failures"). A broken config means no trustworthy verdict was reached —
+    exit 2 — and conflating the two tells CI the site is inaccessible when
+    the real problem is our own file.
     """
+    from verity.agents.validator.waivers import WaiverFileError
     from verity.cli import report_expired_waivers
 
     path = tmp_path / "waivers.yaml"
@@ -377,10 +384,57 @@ def test_cli_surfaces_a_broken_waiver_file_rather_than_ignoring_it(tmp_path, cap
         f'partialFingerprints:\n  "{SIG}":\n    justification: "x"\n',
         encoding="utf-8",
     )
-    returned = report_expired_waivers(str(path))
 
-    assert returned, "a broken waiver file must fail, not pass silently"
+    with pytest.raises(WaiverFileError):
+        report_expired_waivers(str(path))
+
+    # Still explained to the user before it propagates — a bare traceback
+    # would leave them guessing which of fifty waivers is wrong.
     assert "WAIVER FILE INVALID" in capsys.readouterr().out
+
+
+@pytest.mark.asyncio
+async def test_broken_waiver_file_exits_2_not_1(tmp_path, monkeypatch):
+    """
+    End to end through the CLI: a broken waivers.yaml must produce
+    EXIT_SCAN_ERROR (2), never EXIT_GATING_FINDINGS (1). Uses a mock worker
+    so it needs no browser.
+    """
+    import sys as _sys
+    from verity import cli
+    from verity.agents.validator import waivers as waivers_mod
+    from verity.agents.validator import dedup as dedup_mod
+
+    broken = tmp_path / "waivers.yaml"
+    broken.write_text(
+        f'partialFingerprints:\n  "{SIG}":\n    justification: "x"\n',
+        encoding="utf-8",
+    )
+    # Point every default-path reader at the broken file.
+    monkeypatch.setattr(waivers_mod, "DEFAULT_WAIVERS_PATH", broken)
+    monkeypatch.setattr(dedup_mod, "DEFAULT_WAIVERS_PATH", broken, raising=False)
+
+    script = (
+        "import sys, json\n"
+        "while True:\n"
+        "    line = sys.stdin.readline()\n"
+        "    if not line: break\n"
+        "    req = json.loads(line)\n"
+        "    m = req.get('method')\n"
+        "    r = ({'artifactId': 'a1', 'page_state': {'content_hash': 'abc'}}\n"
+        "         if m == 'render' else {'violations': [], 'incomplete': []})\n"
+        "    print(json.dumps({'jsonrpc': '2.0', 'id': req['id'], 'result': r}))\n"
+        "    sys.stdout.flush()\n"
+    )
+    code = await cli.run_cli_scan(
+        "https://example.com",
+        worker_cmd=[_sys.executable, "-c", script],
+        timeout=10.0,
+    )
+    assert code == cli.EXIT_SCAN_ERROR, (
+        f"broken waiver file exited {code}; must be {cli.EXIT_SCAN_ERROR} "
+        "(no verdict), never 1 (gating findings)"
+    )
 
 
 def test_validator_version_bumped_major_for_the_behaviour_change():
