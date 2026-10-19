@@ -25,7 +25,8 @@ Those are Week 9's five. Track B's two need two small runner/worker hooks:
    `not_asserted` for every judgment a machine cannot make. Severity is
    `violation` (may gate) or `warning` (review only, never gates).
 2. `match` keys: `role` (one or a list), `has` / `lacks` (attribute names),
-   `values` (attribute -> allowed values). Unknown keys are an error.
+   `values` (attribute -> allowed values), `controls_not` (roles the
+   aria-controls target must not have). Unknown keys are an error.
 3. Ship **both** fixtures under `fixtures:`. The A9.4 gate
    (`verity/tests/test_contract_gate.py`) rejects a contract unless the runner
    reports zero failures — and decides every implemented violation — on the

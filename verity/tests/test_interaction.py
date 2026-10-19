@@ -102,6 +102,16 @@ def test_unknown_match_key_is_an_error_not_a_match_everything():
         matches({"role": "button", "lack": ["aria-haspopup"]}, disclosure_widget())
 
 
+def test_a_button_that_opens_a_listbox_is_not_a_disclosure():
+    """W3C APG combobox: its open button has aria-expanded and controls a listbox."""
+    combo_button = Widget(
+        root=node("#cb-button", aria_expanded="false", aria_controls="cb-list"),
+        related=[node("#cb-list", role="listbox", id="cb-list")],
+    )
+    assert not matches(load_contracts()["disclosure"].match, combo_button)
+    assert matches(load_contracts()["disclosure"].match, disclosure_widget())
+
+
 def test_empty_match_matches_nothing():
     assert not matches({}, disclosure_widget())
 
@@ -486,3 +496,45 @@ async def test_aria_activedescendant_counts_as_focus_on_the_item():
     for aid in ("open-focuses-first-item", "arrow-down-moves-to-next-item",
                 "escape-closes-and-returns-focus", "space-opens-menu", "items-use-managed-focus"):
         assert r[aid].outcome == "pass", (aid, r[aid].detail)
+
+
+# --- Nikhil's condition (e2e-hardening-reply.md): APG_ONLY only when the WCAG
+# requirement behind it is independently met ----------------------------------
+
+def tab_snaps(start: str, after_next: str) -> list[InteractionSnapshot]:
+    """Snapshots for the tablist plan: steps 0..8, focus never leaving `start` on arrows."""
+    seq = {0: "#t0", 1: "#after", 2: start, 3: after_next, 4: start, 5: start, 6: start, 7: start, 8: start}
+    return [InteractionSnapshot(step_index=-1, active=None)] + [
+        InteractionSnapshot(step_index=i, active=a) for i, a in seq.items()
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_tab_unreachable_by_tab_and_by_arrows_stays_a_violation():
+    """
+    Two tabs in the Tab order (un-idiomatic: APG-only) but the third is
+    tabindex=-1 and the arrows do nothing — so it is unreachable from the
+    keyboard. The roving deviation may be a warning; the arrow failure may not.
+    """
+    run = await run_contracts(
+        WidgetInventory(widgets=[tablist([0, 0, -1])]),
+        exercise_returning(*tab_snaps("#t0", "#t0")),
+        {"tablist": load_contracts()["tablist"]},
+    )
+    r = by_id(run)
+    assert r["roving-tabindex"].severity is Severity.WARNING
+    assert r["arrow-keys-move-between-tabs"].outcome == "fail"
+    assert r["arrow-keys-move-between-tabs"].severity is Severity.VIOLATION, (
+        "a tab reachable by neither Tab nor arrows is a 2.1.1 barrier, never APG-only"
+    )
+
+
+@pytest.mark.asyncio
+async def test_arrows_failing_when_every_tab_is_tabbable_is_apg_only():
+    run = await run_contracts(
+        WidgetInventory(widgets=[tablist([0, 0, 0])]),
+        exercise_returning(*tab_snaps("#t0", "#t0")),
+        {"tablist": load_contracts()["tablist"]},
+    )
+    r = by_id(run)["arrow-keys-move-between-tabs"]
+    assert r.outcome == "fail" and r.severity is Severity.WARNING

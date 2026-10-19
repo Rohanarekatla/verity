@@ -8,6 +8,8 @@
  * `traverseTabOrder`— press Tab and record where focus lands (A4.1–A4.3).
  * `inventoryWidgets`— list widgets with explicit ARIA semantics (A9.2).
  * `exerciseWidget`  — play focus/key steps on a widget, snapshot each (A9.1, A9.3).
+ * `inventoryImages` — every image on the page with its facts and box (A10.1).
+ * `captureImages`   — content-addressed crops of chosen images (A10.2).
  * `releaseArtifact` — close the live page when done with it.
  */
 
@@ -18,6 +20,8 @@ import { runAxeOnPage } from "../static/axe.js";
 import { sampleRegion } from "../static/sampling.js";
 import { traverseTabOrder } from "../interaction/traverse.js";
 import { exerciseWidget, inventoryWidgets } from "../interaction/widgets.js";
+import { inventoryImages } from "../crawler/images.js";
+import { captureElements } from "../crawler/elements.js";
 import type { InteractionStep } from "../contract/contract-types.js";
 import { peekPage, takePage } from "../crawler/pages.js";
 
@@ -252,6 +256,54 @@ export function registerHandlers(dispatcher: Dispatcher): void {
       }
     },
     60_000,
+  );
+
+  /**
+   * inventoryImages — every image on the live page (A10.1): kind, box,
+   * sources and the text-alternative facts as authored. Read-only; the
+   * triage that decides what is worth OCR lives in Python (A10.3).
+   */
+  dispatcher.register(
+    "inventoryImages",
+    async (params: unknown) => {
+      const artifactId = requireStringParam(params, "artifactId");
+      const live = requireLivePage(artifactId);
+      try {
+        return await inventoryImages(live.page);
+      } catch (err) {
+        throw new RpcHandlerError(ErrorCode.INTERNAL_ERROR, err instanceof Error ? err.message : String(err), {
+          artifactId,
+        });
+      }
+    },
+    60_000,
+  );
+
+  /**
+   * captureImages — crop the given selectors into the content-addressed store
+   * (A10.2). Called with only the images triage kept, so the OCR volume cut
+   * by A10.3 is also a capture-volume cut. Returns captures keyed by selector
+   * plus how many distinct files they share.
+   */
+  dispatcher.register(
+    "captureImages",
+    async (params: unknown) => {
+      const artifactId = requireStringParam(params, "artifactId");
+      const live = requireLivePage(artifactId);
+      const selectors = requireArrayParam(params, "selectors").filter((x): x is string => typeof x === "string");
+      const maxCount = optionalNumberParam(params, "maxCount");
+      try {
+        const captures = await captureElements(live.page, selectors, live.elementDir,
+          maxCount === undefined ? {} : { maxCount });
+        const files = new Set(Object.values(captures).map((c) => c.path));
+        return { captures, distinct_files: files.size };
+      } catch (err) {
+        throw new RpcHandlerError(ErrorCode.INTERNAL_ERROR, err instanceof Error ? err.message : String(err), {
+          artifactId,
+        });
+      }
+    },
+    120_000,
   );
 
   /**
