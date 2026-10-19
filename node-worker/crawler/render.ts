@@ -217,7 +217,9 @@ export async function render(url: string, opts: RenderOptions = {}): Promise<Ren
   // content-addressed directory. Done after the cache dir exists and while
   // the page is still live. Text nodes axe marks `incomplete` are captured
   // by runAxe instead, because nothing knows which they are until axe runs.
-  const elementDir = join(dir, "elements");
+  // A10.2 — one content-addressed crop store shared by every render, so an
+  // image seen on two pages (or twice on one) is stored once.
+  const elementDir = join(CACHE_ROOT, "crops");
   await mkdir(elementDir, { recursive: true });
   const elementShots = await captureElements(page, await imageInventory(page), elementDir);
   log.debug("image crops captured", { count: Object.keys(elementShots).length });

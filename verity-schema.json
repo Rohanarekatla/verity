@@ -184,6 +184,18 @@
         "device_pixel_ratio": {
           "title": "Device Pixel Ratio",
           "type": "number"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
         }
       },
       "required": [
@@ -413,6 +425,226 @@
         "page_state_hash"
       ],
       "title": "Finding",
+      "type": "object"
+    },
+    "ImageInventory": {
+      "description": "A10.1 \u2014 every image on the page. Shadow roots and iframes are blind spots, counted.",
+      "properties": {
+        "images": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ImageNode"
+          },
+          "title": "Images",
+          "type": "array"
+        },
+        "shadow_roots_skipped": {
+          "default": 0,
+          "title": "Shadow Roots Skipped",
+          "type": "integer"
+        },
+        "iframes_skipped": {
+          "default": 0,
+          "title": "Iframes Skipped",
+          "type": "integer"
+        }
+      },
+      "title": "ImageInventory",
+      "type": "object"
+    },
+    "ImageNode": {
+      "description": "One image on the page, as measured \u2014 no verdicts.\n\n`alt` is three-valued on purpose: None means the attribute is ABSENT,\n\"\" means the author explicitly marked it decorative. They are different\nfacts and every downstream rule must keep them apart.",
+      "properties": {
+        "selector": {
+          "title": "Selector",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "img",
+            "svg",
+            "canvas",
+            "css-background",
+            "role-img"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "tag": {
+          "title": "Tag",
+          "type": "string"
+        },
+        "box_css": {
+          "$ref": "#/$defs/BoundingBox"
+        },
+        "visible": {
+          "title": "Visible",
+          "type": "boolean"
+        },
+        "sources": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "natural_width": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Natural Width"
+        },
+        "natural_height": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Natural Height"
+        },
+        "alt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Alt"
+        },
+        "aria_label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aria Label"
+        },
+        "aria_labelledby_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aria Labelledby Text"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
+        "aria_hidden": {
+          "default": false,
+          "title": "Aria Hidden",
+          "type": "boolean"
+        },
+        "in_control": {
+          "default": false,
+          "title": "In Control",
+          "type": "boolean"
+        },
+        "link_href": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Link Href"
+        },
+        "in_landmark": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "In Landmark"
+        },
+        "figure_caption": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Figure Caption"
+        },
+        "id_class_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id Class Text"
+        },
+        "has_text_content": {
+          "default": false,
+          "title": "Has Text Content",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "selector",
+        "kind",
+        "tag",
+        "box_css",
+        "visible"
+      ],
+      "title": "ImageNode",
       "type": "object"
     },
     "InteractionSnapshot": {

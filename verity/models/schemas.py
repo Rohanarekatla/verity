@@ -218,6 +218,9 @@ class ElementCapture(BaseModel):
     box_css: BoundingBox
     box_device: BoundingBox
     device_pixel_ratio: float
+    # A10.2 — sha256 of the PNG bytes. Crops are content-addressed: an icon
+    # used twenty times is one file, and every capture of it names that file.
+    content_hash: Optional[str] = None
 
 
 class Latency(BaseModel):
@@ -492,3 +495,48 @@ class ExerciseResult(BaseModel):
     # gallery — apple.com). Effects observed after a key then cannot be
     # attributed to the key, so driven checks must not judge them.
     self_changing: bool = False
+
+
+# --- Image inventory (A10.1 produces it, A10.3 triages it) ------------------
+
+class ImageNode(BaseModel):
+    """
+    One image on the page, as measured — no verdicts.
+
+    `alt` is three-valued on purpose: None means the attribute is ABSENT,
+    "" means the author explicitly marked it decorative. They are different
+    facts and every downstream rule must keep them apart.
+    """
+    selector: str
+    kind: Literal["img", "svg", "canvas", "css-background", "role-img"]
+    tag: str
+    box_css: BoundingBox
+    visible: bool
+    sources: list[str] = []
+    natural_width: Optional[int] = None
+    natural_height: Optional[int] = None
+    alt: Optional[str] = None
+    aria_label: Optional[str] = None
+    aria_labelledby_text: Optional[str] = None
+    title: Optional[str] = None
+    role: Optional[str] = None
+    aria_hidden: bool = False
+    # Inside a link or button: the image is (part of) a control's name.
+    in_control: bool = False
+    link_href: Optional[str] = None
+    # "header" / "nav" / "footer" / "banner" / "navigation" / "contentinfo"
+    in_landmark: Optional[str] = None
+    figure_caption: Optional[str] = None
+    # id + class attribute text, for the logo / icon naming heuristics.
+    id_class_text: Optional[str] = None
+    # CSS background on an element that also holds text (text over image:
+    # the contrast adjudicator's case, not OCR's).
+    has_text_content: bool = False
+
+
+class ImageInventory(BaseModel):
+    """A10.1 — every image on the page. Shadow roots and iframes are blind spots, counted."""
+    images: list[ImageNode] = []
+    shadow_roots_skipped: int = 0
+    iframes_skipped: int = 0
+

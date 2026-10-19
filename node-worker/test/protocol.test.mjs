@@ -110,8 +110,8 @@ test("unknown method returns METHOD_NOT_FOUND and lists what exists", async () =
   assert.deepEqual(
     frames[0].error.data.available.sort(),
     [
-      "exerciseWidget", "inventoryWidgets", "ping", "releaseArtifact", "render", "runAxe",
-      "sampleRegion", "traverseTabOrder",
+      "captureImages", "exerciseWidget", "inventoryImages", "inventoryWidgets", "ping", "releaseArtifact",
+      "render", "runAxe", "sampleRegion", "traverseTabOrder",
     ],
   );
 });
