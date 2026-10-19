@@ -147,6 +147,8 @@ REASON_NOT_SAMPLED = "sampling-failed"
 REASON_AMBIGUOUS = "glyph-background-split-unreliable"
 REASON_NO_BACKGROUND = "no-background-samples"
 REASON_THRESHOLD_UNKNOWN = "text-size-unknown"
+REASON_NO_GLYPHS = "foreground-not-found-in-pixels"
+REASON_POSSIBLY_DECORATIVE = "aria-hidden-possibly-decorative"
 
 
 def _mark_inconclusive(finding: Finding, reason: str, detail: str) -> Finding:
@@ -226,6 +228,7 @@ def adjudicate_contrast(finding: Finding, sample: RegionSample) -> Finding:
     |----------------------------------|------------|---------------|
     | sampling failed                  | cantTell   | NEEDS_REVIEW  |
     | glyph/background split ambiguous | cantTell   | NEEDS_REVIEW  |
+    | no pixel matches the text colour | cantTell   | NEEDS_REVIEW  |
     | no background samples            | cantTell   | NEEDS_REVIEW  |
     | worst ratio >= 4.5               | pass       | AUTHORITATIVE |
     | worst ratio <  3.0               | fail       | AUTHORITATIVE |
@@ -243,8 +246,10 @@ def adjudicate_contrast(finding: Finding, sample: RegionSample) -> Finding:
         return _mark_inconclusive(
             finding,
             REASON_NOT_SAMPLED,
-            "Contrast could not be adjudicated: the region's pixels could not "
-            "be sampled (animation, video, or a cross-origin canvas).",
+            "Contrast could not be adjudicated: no background distinct from the "
+            "text colour could be sampled (text nearly the same colour as its "
+            "background, or a region that cannot be captured, such as video "
+            "or a cross-origin canvas).",
         )
 
     if sample.ambiguous:
@@ -257,6 +262,19 @@ def adjudicate_contrast(finding: Finding, sample: RegionSample) -> Finding:
             REASON_AMBIGUOUS,
             "Contrast could not be adjudicated: text and background pixels "
             "could not be separated reliably in this region.",
+        )
+
+    if sample.text_pixel_count == 0:
+        # Not one rendered pixel matched the foreground colour, so that colour
+        # is not what the glyphs are painted in (SVG `fill`, gradient or
+        # clipped text). Any ratio from it compares colours nobody sees — the
+        # SVG-text false positive found in end-to-end testing. Workers since
+        # then also flag this `ambiguous`; this guards older ones.
+        return _mark_inconclusive(
+            finding,
+            REASON_NO_GLYPHS,
+            "Contrast could not be adjudicated: no rendered pixel matched the "
+            "text colour, so the colour the text is actually painted in is unknown.",
         )
 
     ratio = worst_case_ratio(sample.foreground, sample.background_samples)
@@ -282,6 +300,7 @@ def adjudicate_contrast(finding: Finding, sample: RegionSample) -> Finding:
         "font_size_px": sample.font_size_px,
         "font_weight": sample.font_weight,
         "font_uniform": sample.font_uniform,
+        "aria_hidden": sample.aria_hidden,
     }
     size_class = text_size_class(sample)
 
@@ -293,6 +312,20 @@ def adjudicate_contrast(finding: Finding, sample: RegionSample) -> Finding:
             f"background region, for text of any size."
         )
         evidence["verdict_basis"] = "above the 4.5:1 normal-text threshold"
+    elif sample.aria_hidden and (ratio < THRESHOLD_LARGE_TEXT or size_class == "normal"):
+        # It fails — but text hidden from assistive technology is usually
+        # decoration (developer.mozilla.org's circular background text), and
+        # decoration is exempt from SC 1.4.3. Only a person can tell which.
+        finding = _mark_inconclusive(
+            finding,
+            REASON_POSSIBLY_DECORATIVE,
+            f"Contrast is {ratio:.2f}:1, which would fail SC 1.4.3, but the text is "
+            f"inside aria-hidden=\"true\" and may be decorative (exempt). Needs review.",
+        )
+        evidence["resolved"] = False
+        evidence["reason"] = REASON_POSSIBLY_DECORATIVE
+        finding.evidence.computed_values["contrast_adjudication"] = evidence
+        return finding
     elif ratio < THRESHOLD_LARGE_TEXT:
         finding.outcome = "fail"
         finding.provenance = Provenance.AUTHORITATIVE

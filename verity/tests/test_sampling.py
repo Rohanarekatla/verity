@@ -55,8 +55,15 @@ async def test_solid_background_round_trips_and_is_exact():
 
 
 @pytest.mark.asyncio
-async def test_text_over_image_is_flagged_ambiguous():
+async def test_text_over_image_measures_the_light_square_and_fails():
+    """
+    The two-shot sampler reads the real pixels behind the glyphs, so the
+    checkerboard's light square is in the sample set — and white text over it
+    is an authoritative fail, which is the true answer (~1.2:1).
+    """
+    from verity.agents.contrast import worst_case_ratio
+
     sample = await _sample("#over-image")
-    assert sample.sampled
-    # An adjudicator must not pass this on the deterministic path alone.
-    assert sample.ambiguous is True
+    assert sample.sampled and not sample.ambiguous
+    assert any((b.r, b.g, b.b) == (232, 232, 232) for b in sample.background_samples)
+    assert worst_case_ratio(sample.foreground, sample.background_samples) < 3.0

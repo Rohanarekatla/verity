@@ -67,6 +67,7 @@ export interface ExerciseResult {
   steps_run: number;
   complete: boolean;
   incomplete_reason?: string | null;
+  self_changing?: boolean;
 }
 
 export interface Finding {
@@ -94,9 +95,10 @@ export interface InteractionSnapshot {
 }
 
 export interface InteractionStep {
-  action: "focus" | "press";
+  action: "focus" | "press" | "click";
   target?: string | null;
   key?: string | null;
+  expect?: string | null;
 }
 
 export interface Latency {
@@ -131,6 +133,7 @@ export interface RegionSample {
   font_size_px?: number | null;
   font_weight?: number | null;
   font_uniform?: boolean;
+  aria_hidden?: boolean;
 }
 
 export interface RenderArtifact {

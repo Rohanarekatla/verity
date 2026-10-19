@@ -294,6 +294,10 @@ class RegionSample(BaseModel):
     font_size_px: Optional[float] = None
     font_weight: Optional[int] = None
     font_uniform: bool = False
+    # Inside aria-hidden="true": hidden from assistive technology, usually
+    # decorative — and pure decoration is exempt from SC 1.4.3. A failing
+    # ratio here goes to review rather than gating.
+    aria_hidden: bool = False
 
 
 # --- Keyboard traversal (A4.1–A4.2 produce it, B4.1–B4.4 interpret it) ---
@@ -344,6 +348,7 @@ class TabStop(BaseModel):
     # The *authored* tabindex attribute, not the computed one. A positive
     # value is the signal SC 2.4.3 cares about: it lifts an element out of
     # DOM order and is the classic way focus order stops matching meaning.
+    # None means the attribute is ABSENT (a plain <button>), not "unmeasured".
     tabindex: Optional[int] = None
     # A4.3 fills this in. `None` means "not measured", which is different
     # from `False` ("measured, and there is no visible indicator") and must
@@ -445,11 +450,18 @@ class WidgetInventory(BaseModel):
 
 class InteractionStep(BaseModel):
     """One thing the runner asks the worker to do to a widget."""
-    action: Literal["focus", "press"]
-    # `focus`: the selector to focus. `press`: unused (keys go to the focused element).
+    action: Literal["focus", "press", "click"]
+    # `focus` / `click`: the selector to act on. `press`: unused (keys go to
+    # the focused element). `click` exists for keyboard-PARITY checks: a key
+    # that does nothing is only a keyboard barrier if a click does something.
     target: Optional[str] = None
     # `press`: a Playwright key name — "Enter", " ", "ArrowRight", "Tab", …
     key: Optional[str] = None
+    # What this step is expected to change, so the worker waits for THAT and
+    # not merely the first change of any kind: apple.com's gallery flips
+    # aria-selected at once but moves focus only after its slide animation.
+    # None = any observable change.
+    expect: Optional[Literal["focus"]] = None
 
 
 class InteractionSnapshot(BaseModel):
@@ -476,3 +488,7 @@ class ExerciseResult(BaseModel):
     steps_run: int = Field(ge=0)
     complete: bool
     incomplete_reason: Optional[str] = None
+    # The widget changed while nobody touched it (an autoplaying carousel or
+    # gallery — apple.com). Effects observed after a key then cannot be
+    # attributed to the key, so driven checks must not judge them.
+    self_changing: bool = False
