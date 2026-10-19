@@ -27,6 +27,7 @@ from verity.models.schemas import (
     WidgetInventory,
     ExerciseResult,
     InteractionStep,
+    ImageInventory,
 )
 
 # The roots of the cross-language contract. Nested models come along for free.
@@ -45,6 +46,8 @@ BOUNDARY_MODELS = [
     # exerciseWidget(steps: InteractionStep[]) -> ExerciseResult (A9.1, A9.3)
     InteractionStep,
     ExerciseResult,
+    # inventoryImages() -> ImageInventory (A10.1)
+    ImageInventory,
 ]
 
 

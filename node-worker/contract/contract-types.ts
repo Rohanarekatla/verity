@@ -50,6 +50,7 @@ export interface ElementCapture {
   box_css: BoundingBox;
   box_device: BoundingBox;
   device_pixel_ratio: number;
+  content_hash?: string | null;
 }
 
 export interface Evidence {
@@ -85,6 +86,35 @@ export interface Finding {
   evidence: Evidence;
   page_state_hash: string;
   waived?: boolean;
+}
+
+export interface ImageInventory {
+  images?: ImageNode[];
+  shadow_roots_skipped?: number;
+  iframes_skipped?: number;
+}
+
+export interface ImageNode {
+  selector: string;
+  kind: "img" | "svg" | "canvas" | "css-background" | "role-img";
+  tag: string;
+  box_css: BoundingBox;
+  visible: boolean;
+  sources?: string[];
+  natural_width?: number | null;
+  natural_height?: number | null;
+  alt?: string | null;
+  aria_label?: string | null;
+  aria_labelledby_text?: string | null;
+  title?: string | null;
+  role?: string | null;
+  aria_hidden?: boolean;
+  in_control?: boolean;
+  link_href?: string | null;
+  in_landmark?: string | null;
+  figure_caption?: string | null;
+  id_class_text?: string | null;
+  has_text_content?: boolean;
 }
 
 export interface InteractionSnapshot {
