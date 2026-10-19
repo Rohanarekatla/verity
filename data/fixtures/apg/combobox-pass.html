@@ -1,0 +1,63 @@
+<!doctype html>
+<!--
+  A9.4 pass fixture for data/apg-contracts/combobox.yaml (Track B, Week 9).
+  The APG editable combobox with list autocomplete. Labelled by a native
+  <label for> on purpose: the in-page name guess cannot see it, so this
+  fixture also pins B9.1 (the browser's computed accessible name).
+  ArrowDown opens the listbox and moves virtual focus (aria-activedescendant)
+  through the options; Alt+ArrowDown opens without moving; Escape closes;
+  DOM focus never leaves the input.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>APG combobox — pass</title>
+    <style>[aria-selected="true"] { outline: 2px solid #000; }</style>
+  </head>
+  <body>
+    <button id="before">Before the widget</button>
+    <label for="state">State</label>
+    <input id="state" type="text" role="combobox" aria-autocomplete="list"
+           aria-expanded="false" aria-controls="state-listbox" />
+    <ul id="state-listbox" role="listbox" aria-label="States" hidden>
+      <li role="option" id="opt-1">Alabama</li>
+      <li role="option" id="opt-2">Alaska</li>
+      <li role="option" id="opt-3">Arizona</li>
+    </ul>
+    <button id="after">After the widget</button>
+    <script>
+      const input = document.getElementById("state");
+      const listbox = document.getElementById("state-listbox");
+      const options = [...listbox.querySelectorAll('[role="option"]')];
+      let active = -1;
+      function setActive(i) {
+        options.forEach((o, k) => o.setAttribute("aria-selected", String(k === i)));
+        active = i;
+        if (i < 0) input.removeAttribute("aria-activedescendant");
+        else input.setAttribute("aria-activedescendant", options[i].id);
+      }
+      function open() { listbox.hidden = false; input.setAttribute("aria-expanded", "true"); }
+      function close() { listbox.hidden = true; input.setAttribute("aria-expanded", "false"); setActive(-1); }
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowDown" && e.altKey) { e.preventDefault(); open(); return; }
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          if (listbox.hidden) { open(); setActive(0); }
+          else setActive((active + 1) % options.length);
+        } else if (e.key === "ArrowUp" && !listbox.hidden) {
+          e.preventDefault();
+          setActive((active - 1 + options.length) % options.length);
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          close();
+        } else if (e.key === "Enter" && active >= 0) {
+          e.preventDefault();
+          input.value = options[active].textContent;
+          close();
+        }
+      });
+      input.addEventListener("click", () => (listbox.hidden ? open() : close()));
+      options.forEach((o) => o.addEventListener("click", () => { input.value = o.textContent; close(); input.focus(); }));
+    </script>
+  </body>
+</html>

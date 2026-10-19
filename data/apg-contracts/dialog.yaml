@@ -1,0 +1,175 @@
+# APG contract — Dialog (Modal), reached from its trigger button
+#
+# Week 9 artifact, Track B half (one of B's two independent contracts).
+# Written by hand from the WAI-ARIA Authoring Practices "Dialog (Modal)"
+# pattern and the ARIA 1.2 `dialog` / `alertdialog` / `aria-modal` /
+# `aria-haspopup` definitions, before the checks in
+# verity/agents/interaction.py. Cross-check against A at the pair session.
+#
+# ---------------------------------------------------------------------------
+# The point of this file
+#
+# A modal dialog is the pattern where the page has to MOVE focus for the user
+# and then KEEP it somewhere. Two failures dominate, and both are invisible to
+# a mouse user:
+#
+#   1. The dialog opens, but focus is left on the trigger behind it. A
+#      keyboard user's next Tab goes to whatever is under the overlay.
+#   2. Focus goes in, but Tab walks straight out of the dialog into the
+#      obscured page, because nothing contains it.
+#
+# The false alarms to avoid:
+#
+#   - A NON-modal dialog may let Tab leave. Containment is only asserted when
+#     the author declared the dialog modal (aria-modal="true"); otherwise it
+#     is cantTell.
+#   - A native <dialog> opened with showModal() at the end of its focus cycle
+#     sends focus to the browser's own UI (address bar), not into the page.
+#     That is focus reported as "nowhere", and it is NOT an escape into the
+#     obscured page, so it is not a failure.
+#   - Escape and focus-return are APG etiquette, not WCAG barriers on their
+#     own (a Close button reachable by Tab still closes the dialog), so they
+#     are warnings.
+#
+# ---------------------------------------------------------------------------
+# Why match the TRIGGER, not role=dialog
+#
+# A closed dialog is not rendered, so the runner (correctly) does not judge
+# it; to exercise a dialog we have to open it. The only non-speculative way to
+# know which button opens which dialog is the author saying so:
+# aria-haspopup="dialog" on the button (and aria-controls for which one). A
+# plain button whose click handler happens to open a dialog — the APG's own
+# example does exactly this — declares nothing, and guessing would violate
+# A9.2's "never speculative". Those dialogs are out of scope by `match`, not
+# reported as broken.
+#
+# Severity vocabulary as in tablist.yaml:
+#   violation -> may gate a build;  warning -> cantTell / NEEDS_REVIEW only.
+
+contract: dialog
+version: 1
+source:
+  - "WAI-ARIA Authoring Practices Guide — Dialog (Modal) pattern"
+  - "ARIA 1.2 — roles: dialog, alertdialog; properties: aria-modal, aria-haspopup"
+wcag:
+  - "2.1.1"   # Keyboard
+  - "2.4.3"   # Focus Order
+  - "4.1.2"   # Name, Role, Value
+
+match:
+  role: button
+  values:
+    aria-haspopup: ["dialog"]
+
+# ---------------------------------------------------------------------------
+# Structure
+# ---------------------------------------------------------------------------
+structure:
+  - id: trigger-has-accessible-name
+    severity: violation
+    assert: "the button that opens the dialog has a non-empty accessible name"
+    wcag: "4.1.2"
+
+  - id: controls-a-dialog
+    severity: violation
+    assert: >
+      when aria-controls is present, it references a role=dialog,
+      role=alertdialog, or native <dialog> element
+    wcag: "4.1.2"
+    note: >
+      aria-controls is how we find the dialog. Without it every
+      dialog-dependent check below is cantTell — never a fail for a reference
+      the author was allowed to omit.
+
+  - id: dialog-has-accessible-name
+    severity: warning
+    assert: "the dialog is named by aria-label or aria-labelledby"
+    wcag: "4.1.2"
+    note: >
+      ARIA requires a name on dialog, and screen readers announce it on
+      entry. But a dialog is a container rather than an operable control, and
+      axe-core files the same rule as best practice — so a warning.
+
+  - id: dialog-hidden-initially
+    severity: warning
+    assert: "before any interaction the dialog is not displayed"
+    wcag: "4.1.2"
+
+# ---------------------------------------------------------------------------
+# Keyboard
+# ---------------------------------------------------------------------------
+keyboard:
+  - id: trigger-in-tab-sequence
+    severity: violation
+    assert: "an enabled trigger button has no negative authored tabindex"
+    wcag: "2.1.1"
+
+  - id: enter-opens-dialog
+    severity: violation
+    assert: "with the trigger focused and the dialog closed, Enter displays the dialog"
+    wcag: "2.1.1"
+    note: >
+      Keyboard parity, as in disclosure.yaml: a failure only when neither
+      Enter nor Space opens it and a click does.
+
+  - id: space-opens-dialog
+    severity: violation
+    assert: "with the trigger focused and the dialog closed, Space displays the dialog"
+    wcag: "2.1.1"
+
+  - id: focus-moves-into-dialog
+    severity: violation
+    assert: "when the keyboard opens the dialog, focus is inside the dialog"
+    wcag: "2.4.3"
+    note: >
+      THE check for this pattern. Focus on the dialog element itself
+      (tabindex=-1) counts as inside — the APG allows it for dialogs whose
+      first content is long text.
+
+  - id: tab-stays-in-modal-dialog
+    severity: violation
+    assert: >
+      in a dialog declared aria-modal="true", Tab and Shift+Tab never move
+      focus to page content outside the dialog
+    wcag: "2.4.3"
+    note: >
+      Focus reported as nowhere (the browser's own UI) is not an escape.
+      Not judged for a dialog that does not declare itself modal.
+
+  - id: escape-closes-dialog
+    severity: warning
+    assert: "with focus inside the open dialog, Escape hides it"
+    wcag: "2.1.1"
+    note: >
+      Required by the APG, but a Close button reachable by Tab also lets a
+      keyboard user out, so a missing Escape is etiquette, not a barrier.
+
+  - id: focus-returns-to-trigger
+    severity: warning
+    assert: "after Escape closes the dialog, focus is back on the trigger"
+    wcag: "2.4.3"
+    note: >
+      The APG allows returning focus elsewhere when the trigger no longer
+      makes sense (e.g. it was deleted by the dialog's action).
+
+# ---------------------------------------------------------------------------
+# Deliberately NOT asserted
+# ---------------------------------------------------------------------------
+not_asserted:
+  - "which element inside the dialog receives focus first — the APG gives
+     several valid choices depending on the content"
+  - "whether background content is made inert or aria-hidden — modern
+     browsers do it for showModal(), libraries do it in different ways"
+  - "dialogs opened by a button that declares nothing (no aria-haspopup) —
+     out of scope by `match`, because the link cannot be known without guessing"
+  - "whether the dialog's title is meaningful"
+  - "non-modal dialogs' focus behaviour — they may legitimately let Tab out"
+  - "alertdialog-specific requirements (aria-describedby on the message)"
+
+reference_implementations:
+  - "APG dialog (modal) example — its trigger declares no aria-haspopup, so
+     it is out of scope by `match` (0 widgets matched, 0 false alarms)"
+
+fixtures:
+  pass: apg/dialog-pass.html
+  fail: apg/dialog-fail.html
