@@ -124,26 +124,82 @@ async def test_disclosure_that_toggles_on_enter_and_space_passes():
         snap(0, "#btn", "false", True),
         snap(1, "#btn", "true", False),
         snap(2, "#btn", "false", True),
+        snap(3, "#btn", "true", False),
     )
     inv = WidgetInventory(widgets=[disclosure_widget()])
     run = await run_contracts(inv, ex, disclosure_only())
     r = by_id(run)
     assert all(x.outcome == "pass" for x in run.results), [(x.assertion_id, x.detail) for x in run.results]
-    assert r["enter-toggles"].trace == ["focus #btn", "press 'Enter'", "press ' '"]
+    assert r["enter-toggles"].trace == ["focus #btn", "press 'Enter'", "press ' '", "click #btn"]
+
+
+def keys_then_click(enter: bool, space: bool, click: bool):
+    """Snapshots for focus, Enter, Space, click — each flipping aria-expanded or not."""
+    state, snaps = "false", [snap(-1, None, "false", True), snap(0, "#btn", "false", True)]
+    for i, flips in ((1, enter), (2, space), (3, click)):
+        state = ("true" if state == "false" else "false") if flips else state
+        snaps.append(snap(i, "#btn", state, state == "false"))
+    return exercise_returning(*snaps)
 
 
 @pytest.mark.asyncio
 async def test_click_only_button_fails_enter_and_space():
-    ex = exercise_returning(
-        snap(-1, None, "false", True),
-        snap(0, "#btn", "false", True),
-        snap(1, "#btn", "false", True),
-        snap(2, "#btn", "false", True),
+    """Neither key works, a click does: the keyboard user is locked out."""
+    run = await run_contracts(
+        WidgetInventory(widgets=[disclosure_widget()]), keys_then_click(False, False, True), disclosure_only()
     )
-    run = await run_contracts(WidgetInventory(widgets=[disclosure_widget()]), ex, disclosure_only())
     r = by_id(run)
-    assert r["enter-toggles"].outcome == "fail"
+    for aid in ("enter-toggles", "space-toggles"):
+        assert r[aid].outcome == "fail" and r[aid].severity is Severity.VIOLATION, aid
+
+
+@pytest.mark.asyncio
+async def test_an_accordion_that_ignores_mouse_and_keyboard_alike_is_not_a_keyboard_failure():
+    """github.com: the open header of a one-open accordion ignores Enter — and a click."""
+    run = await run_contracts(
+        WidgetInventory(widgets=[disclosure_widget()]), keys_then_click(False, False, False), disclosure_only()
+    )
+    r = by_id(run)
+    assert r["enter-toggles"].outcome == "cantTell"
+    assert r["space-toggles"].outcome == "cantTell"
+
+
+@pytest.mark.asyncio
+async def test_space_failing_while_enter_works_is_an_apg_deviation_not_a_barrier():
+    run = await run_contracts(
+        WidgetInventory(widgets=[disclosure_widget()]), keys_then_click(True, False, True), disclosure_only()
+    )
+    r = by_id(run)
+    assert r["enter-toggles"].outcome == "pass"
     assert r["space-toggles"].outcome == "fail"
+    assert r["space-toggles"].severity is Severity.WARNING
+    [f] = [f for f in to_findings(run, "h") if f.rule_id == "apg-disclosure-space-toggles"]
+    assert f.provenance is Provenance.NEEDS_REVIEW, "an APG deviation must never gate"
+
+
+@pytest.mark.asyncio
+async def test_an_autoplaying_widget_is_not_judged_on_key_effects():
+    """apple.com's gallery rotates by itself; a key's 'effect' may be the timer's."""
+    ex = keys_then_click(False, False, True)
+    inner = ex
+
+    async def autoplaying(*args):
+        return (await inner(*args)).model_copy(update={"self_changing": True})
+
+    run = await run_contracts(WidgetInventory(widgets=[disclosure_widget()]), autoplaying, disclosure_only())
+    r = by_id(run)
+    assert r["enter-toggles"].outcome == "cantTell" and "on its own" in r["enter-toggles"].detail
+    assert r["button-has-accessible-name"].outcome == "pass", "static checks still stand"
+
+
+@pytest.mark.asyncio
+async def test_widgets_not_rendered_are_not_judged():
+    hidden = disclosure_widget()
+    hidden.root.hidden = True
+    ex = exercise_returning()
+    run = await run_contracts(WidgetInventory(widgets=[hidden]), ex, disclosure_only())
+    assert {r.outcome for r in run.results} == {"notChecked"}
+    assert ex.calls == []
 
 
 @pytest.mark.asyncio
@@ -255,6 +311,18 @@ async def test_roving_tabindex(tabindexes, expected):
         {"tablist": load_contracts()["tablist"]},
     )
     assert by_id(run)["roving-tabindex"].outcome == expected
+
+
+@pytest.mark.asyncio
+async def test_every_tab_in_the_tab_order_is_un_idiomatic_not_a_barrier():
+    """github.com's hero tabs: all reachable by Tab, so the failure never gates."""
+    run = await run_contracts(
+        WidgetInventory(widgets=[tablist([0, 0, 0])]), exercise_returning(),
+        {"tablist": load_contracts()["tablist"]},
+    )
+    r = by_id(run)["roving-tabindex"]
+    assert r.outcome == "fail" and r.severity is Severity.WARNING
+    assert r.detail.startswith("APG deviation")
 
 
 # --- findings ----------------------------------------------------------------
@@ -377,7 +445,9 @@ async def test_tabindex_minus_one_inside_a_roving_widget_is_not_a_failure():
     )
     verdicts = {(r.widget, r.assertion_id): r.outcome for r in run.results}
     assert verdicts[("#act", "trigger-in-tab-sequence")] == "cantTell"
-    assert verdicts[("#act2", "trigger-in-tab-sequence")] == "fail"
+    # Outside a roving pattern too: tabindex=-1 alone does not prove a barrier
+    # (stripe.com) — reachability is the tab-order traversal's call, not ours.
+    assert verdicts[("#act2", "trigger-in-tab-sequence")] == "cantTell"
 
 
 def menu_snap(i: int, active: str | None, menu_open: bool, activedescendant: str | None = None):

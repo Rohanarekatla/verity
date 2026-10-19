@@ -274,6 +274,42 @@ async def _run_keyboard_traversal(
     return findings
 
 
+async def _run_apg_contracts(
+    rpc_call: Any, artifact_id: str, page_state_hash: str
+) -> list[Finding]:
+    """
+    Week 9 — judge every widget with explicit ARIA semantics against the APG
+    contracts in data/apg-contracts/ (A9.1–A9.4), and map the verdicts to
+    Findings (failed `warning` assertions never gate; `notChecked` emits
+    nothing).
+
+    This presses keys, so it MUTATES the live page: it must run after every
+    stage that reads the rendered state — axe, contrast sampling, and the
+    tab-order traversal — and before `releaseArtifact`.
+
+    Same graceful fallback as the keyboard traversal: a worker without
+    `inventoryWidgets`, a timeout, a payload that does not validate — none of
+    those is evidence of a widget defect, so none produces a finding.
+    """
+    from verity.agents.interaction import run_contracts_on_artifact, to_findings
+
+    try:
+        run = await run_contracts_on_artifact(rpc_call, artifact_id)
+    except Exception as exc:
+        logger.info(
+            "APG contract run unavailable (%s); no interaction findings this run.",
+            exc.__class__.__name__,
+        )
+        return []
+    findings = to_findings(run, page_state_hash)
+    logger.info(
+        "APG contracts: %s widget(s) matched, %d finding(s).",
+        sum(run.widgets_matched.values()),
+        len(findings),
+    )
+    return findings
+
+
 def build_conformance_map(findings: list[Finding]) -> dict[str, str]:
     """
     Collapse findings to one outcome per success criterion, worst-first.
@@ -423,6 +459,12 @@ async def scan_url(
         # the point of having one Finding model.
         findings.extend(
             await _run_keyboard_traversal(rpc_call, artifact_id, content_hash)
+        )
+
+        # Step 3.8: Week 9 — APG widget contracts. Last, because it presses
+        # keys on the page (opens menus, toggles disclosures).
+        findings.extend(
+            await _run_apg_contracts(rpc_call, artifact_id, content_hash)
         )
 
         # Step 3.5: Deduplicate and apply waivers
