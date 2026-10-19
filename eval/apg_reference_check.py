@@ -32,6 +32,15 @@ REFERENCE_PAGES = [
     "menu-button/examples/menu-button-actions/",
     "menu-button/examples/menu-button-actions-active-descendant/",
     "menu-button/examples/menu-button-links/",
+    # Week 9, Track B — dialog and combobox. The APG dialog example's trigger
+    # declares no aria-haspopup, so the dialog contract matches nothing there
+    # by design (dialog.yaml, "Why match the TRIGGER"); it is listed so any
+    # false alarm from the other contracts on that page still shows up.
+    "dialog-modal/examples/dialog/",
+    "combobox/examples/combobox-autocomplete-list/",
+    "combobox/examples/combobox-autocomplete-both/",
+    "combobox/examples/combobox-select-only/",
+    "combobox/examples/combobox-datepicker/",
 ]
 
 

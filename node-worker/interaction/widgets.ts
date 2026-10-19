@@ -34,6 +34,7 @@ import type {
   WidgetNode,
 } from "../contract/contract-types.js";
 import { ROVING_ROLES } from "./traverse.js";
+import { withComputedNames } from "./accname.js";
 
 // Container roles whose owned items are what the user moves between, and the
 // item roles each one owns. Keep in sync with the APG patterns we have
@@ -43,6 +44,10 @@ const CONTAINER_ITEMS: Record<string, string[]> = {
   tablist: ["tab"],
   menu: ["menuitem", "menuitemcheckbox", "menuitemradio"],
   menubar: ["menuitem", "menuitemcheckbox", "menuitemradio"],
+  // Week 9, Track B — the combobox contract's popup. Listed so a combobox
+  // (below) can find its options; a bare listbox has no contract yet, so
+  // inventorying it judges nothing.
+  listbox: ["option"],
 };
 
 const DEFAULT_MAX_STEPS = 40;
@@ -73,7 +78,10 @@ export interface ExerciseOptions {
 }
 
 export async function inventoryWidgets(page: Page): Promise<WidgetInventory> {
-  return page.evaluate(inventoryInPage, { containerItems: CONTAINER_ITEMS, rovingRoles: ROVING_ROLES });
+  const inventory = await page.evaluate(inventoryInPage, { containerItems: CONTAINER_ITEMS, rovingRoles: ROVING_ROLES });
+  // B9.1/B9.3 (Track B): replace the in-page name guess with the browser's
+  // computed accessible name wherever the node is rendered. See accname.ts.
+  return withComputedNames(page, inventory);
 }
 
 export async function exerciseWidget(page: Page, options: ExerciseOptions): Promise<ExerciseResult> {
@@ -453,6 +461,15 @@ function inventoryInPage(args: {
     } else if (role === "button" && (el.hasAttribute("aria-expanded") || el.hasAttribute("aria-haspopup"))) {
       // A trigger: its items are those of the container it controls, if any.
       const target = document.getElementById((el.getAttribute("aria-controls") ?? "").split(/\s+/)[0] ?? "");
+      const tRole = target ? roleOf(target) : null;
+      items = target && tRole && tRole in containerItems ? ownedItems(target, tRole) : [];
+    } else if (role === "combobox") {
+      // Week 9, Track B — a combobox's items are the options of the popup it
+      // controls (aria-controls, ARIA 1.2) or owns (aria-owns, ARIA 1.0).
+      // A popup rendered only on open is simply absent here; the contract
+      // runner watches it by id instead of guessing.
+      const ref = (el.getAttribute("aria-controls") || el.getAttribute("aria-owns") || "").split(/\s+/)[0] ?? "";
+      const target = ref ? document.getElementById(ref) : null;
       const tRole = target ? roleOf(target) : null;
       items = target && tRole && tRole in containerItems ? ownedItems(target, tRole) : [];
     } else {

@@ -1,0 +1,162 @@
+# APG contract — Combobox (with a listbox popup)
+#
+# Week 9 artifact, Track B half (B's second independent contract). Written
+# by hand from the WAI-ARIA Authoring Practices combobox pattern (editable
+# "autocomplete list" and "select-only" variants) and the ARIA 1.2
+# `combobox` / `listbox` / `option` / `aria-activedescendant` definitions,
+# before the checks in verity/agents/interaction.py. Cross-check against A.
+#
+# ---------------------------------------------------------------------------
+# The point of this file
+#
+# A combobox is the pattern where DOM focus deliberately does NOT move. The
+# user stays in the text field (or on the select-only button) and the arrow
+# keys move a *virtual* focus through the options, announced through
+# aria-activedescendant. So the questions are:
+#
+#   - can the keyboard open the popup at all, and
+#   - can the keyboard reach the options — by aria-activedescendant (APG) or,
+#     less idiomatically, by moving DOM focus into the listbox.
+#
+# The classic failure is a custom select that opens on click only, or whose
+# options can only be picked with the mouse. For a SELECT-ONLY combobox that
+# is a hard barrier: there is no other way to set the value. For an EDITABLE
+# combobox the user can still type the value, so unreachable suggestions are
+# an APG deviation (reviewed), not a gate.
+#
+# The false alarms to avoid:
+#
+#   - Lazily-rendered popups. Many comboboxes create the listbox only when
+#     it opens, so aria-controls dangles at load. A reference is judged only
+#     once the popup has been displayed; before that it is cantTell.
+#   - Search boxes that show suggestions only after typing. Neither ArrowDown
+#     nor a click opens them — that is not a keyboard-only difference, so it
+#     is cantTell (keyboard parity, as in disclosure.yaml).
+#   - Popups that are not listboxes (grid, tree, dialog — a date picker).
+#     Option checks are cantTell for those; the popup is still found.
+#
+# Severity vocabulary as in tablist.yaml:
+#   violation -> may gate a build;  warning -> cantTell / NEEDS_REVIEW only.
+
+contract: combobox
+version: 1
+source:
+  - "WAI-ARIA Authoring Practices Guide — Combobox pattern"
+  - "ARIA 1.2 — roles: combobox, listbox, option; aria-activedescendant, aria-expanded"
+wcag:
+  - "2.1.1"   # Keyboard
+  - "4.1.2"   # Name, Role, Value
+
+match:
+  role: combobox
+
+# ---------------------------------------------------------------------------
+# Structure
+# ---------------------------------------------------------------------------
+structure:
+  - id: combobox-has-accessible-name
+    severity: violation
+    assert: "the combobox has a non-empty accessible name"
+    wcag: "4.1.2"
+    note: >
+      Judged on the browser's computed name (B9.1), so a native
+      <label for> counts. The in-page fallback alone would miss it and cry
+      wolf on the APG's own examples.
+
+  - id: aria-expanded-is-boolean
+    severity: violation
+    assert: "aria-expanded on the combobox is exactly 'true' or 'false'"
+    wcag: "4.1.2"
+    note: >
+      ARIA 1.2 makes aria-expanded required on combobox. An invalid value is
+      a violation; an absent one is reported as an APG/ARIA deviation for
+      review (its default, false, is still a state AT can report), because
+      older ARIA 1.0 widgets omit it and expanded-true-when-open below is the
+      check that catches a state that is actually wrong.
+
+  - id: controls-a-popup
+    severity: violation
+    assert: >
+      once the popup has been displayed, aria-controls (or aria-owns, ARIA
+      1.0) references an existing listbox, grid, tree, or dialog
+    wcag: "4.1.2"
+
+  - id: options-have-names
+    severity: violation
+    assert: "every role=option present in the listbox has a non-empty accessible name"
+    wcag: "4.1.2"
+
+  - id: popup-hidden-initially
+    severity: warning
+    assert: "before any interaction the popup is not displayed"
+    wcag: "4.1.2"
+
+# ---------------------------------------------------------------------------
+# Keyboard
+# ---------------------------------------------------------------------------
+keyboard:
+  - id: keyboard-opens-popup
+    severity: violation
+    assert: >
+      with the combobox focused and the popup closed, ArrowDown or
+      Alt+ArrowDown displays the popup
+    wcag: "2.1.1"
+    note: >
+      Fails only when neither key opens it and a click does — the keyboard
+      user is locked out of something a mouse user can do.
+
+  - id: expanded-true-when-open
+    severity: violation
+    assert: "while the popup is displayed, the combobox has aria-expanded=true"
+    wcag: "4.1.2"
+    note: >
+      Without it a screen reader user is never told the list is there.
+      Requires aria-controls/aria-owns to locate the popup; cantTell without.
+
+  - id: arrow-keys-reach-options
+    severity: violation
+    assert: >
+      with a listbox popup open, ArrowDown makes an option active —
+      aria-activedescendant on the combobox names an option, or DOM focus is
+      on an option
+    wcag: "2.1.1"
+    note: >
+      A violation for a select-only combobox (choosing an option is the only
+      way to set its value). For an editable combobox the user can type the
+      value, so the same failure is an APG deviation, reported for review.
+
+  - id: focus-stays-on-combobox
+    severity: warning
+    assert: "while moving through options, DOM focus stays on the combobox"
+    wcag: "2.4.3"
+    note: >
+      The APG pattern. Moving DOM focus into the listbox works for keyboard
+      users and is common in older libraries — unusual, not wrong.
+
+  - id: escape-closes-popup
+    severity: warning
+    assert: "with the popup open, Escape hides it"
+    wcag: "2.1.1"
+
+# ---------------------------------------------------------------------------
+# Deliberately NOT asserted
+# ---------------------------------------------------------------------------
+not_asserted:
+  - "what the suggestions are, or whether filtering is correct"
+  - "aria-autocomplete value vs the actual autocomplete behaviour"
+  - "whether Enter accepts the active option — the result is app-specific
+     (it may submit a form or navigate)"
+  - "typing behaviour (typeahead, inline completion)"
+  - "whether arrow keys wrap at the ends of the list — optional"
+  - "the ARIA 1.0 combobox wrapper (role=combobox around a textbox) in depth —
+     it is matched, but anything needing the inner textbox is cantTell"
+
+reference_implementations:
+  - "APG combobox example — autocomplete list"
+  - "APG combobox example — autocomplete both"
+  - "APG combobox example — select-only"
+  - "APG combobox example — date picker (dialog popup; option checks cantTell)"
+
+fixtures:
+  pass: apg/combobox-pass.html
+  fail: apg/combobox-fail.html

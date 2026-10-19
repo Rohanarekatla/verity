@@ -40,8 +40,8 @@ def test_every_shipped_contract_declares_fixtures_that_exist():
 
 
 def test_the_first_contracts_are_in_place():
-    """Week 9: tablist (B, Week 4) plus Track A's disclosure and menu-button."""
-    assert {"tablist", "disclosure", "menu-button"} <= set(load_contracts())
+    """Week 9's five: tablist (B, Week 4), A's disclosure and menu-button, B's dialog and combobox."""
+    assert {"tablist", "disclosure", "menu-button", "dialog", "combobox"} <= set(load_contracts())
 
 
 async def _client():
