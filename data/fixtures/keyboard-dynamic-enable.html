@@ -1,0 +1,20 @@
+<!doctype html>
+<!--
+  Regression (stripe.com): a carousel "Previous" button is disabled at the
+  first slide and enabled once the carousel advances — here, 300 ms after
+  load-plus-a-bit, i.e. during the traversal. Tab rightly skips it while
+  disabled; it must not then be reported as an unreachable control.
+-->
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Dynamic enable</title></head>
+  <body>
+    <button id="a">First</button>
+    <button id="prev" disabled aria-label="Previous slide">‹</button>
+    <button id="b">Last</button>
+    <script>
+      document.getElementById("a").addEventListener("focus", () => {
+        setTimeout(() => { document.getElementById("prev").disabled = false; }, 50);
+      }, { once: true });
+    </script>
+  </body>
+</html>
