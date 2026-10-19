@@ -44,6 +44,9 @@ match:
   role: button
   has: [aria-expanded]
   lacks: [aria-haspopup]
+  # A button that opens a listbox / grid / tree / dialog / menu is part of
+  # that pattern (the APG combobox's open button), not a disclosure.
+  controls_not: [listbox, grid, tree, dialog, menu]
 
 # ---------------------------------------------------------------------------
 # Structure
