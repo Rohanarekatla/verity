@@ -10,6 +10,17 @@ Implemented (B1.5):
 - `detach_label.py` — points `<label for>` at a nonexistent id
 - `reduce_contrast.py` — forces `#cccccc` on `#ffffff` (≈1.6:1)
 
+ARIA misuse (B9.4, Week 9) — all in `aria_misuse.py`, applied to the APG
+pass fixtures; `verity/tests/test_aria_misuse.py` requires every one to fail
+a contract `violation` (Week 9's "all injected misuse fails"):
+
+- `click_only_widget` — `<button>` rebuilt as `<div role=button tabindex=0>`
+- `strip_accessible_name` — no content, `aria-label`, `aria-labelledby` or `title`
+- `invalid_aria_state` — e.g. `aria-expanded="yes"`
+- `dangling_idref` — `aria-controls` → an id that does not exist
+- `wrong_role` — e.g. tabpanels given `role=region`
+- `remove_from_tab_order` — `tabindex=-1` on every item of a roving widget
+
 Each has an `inject(html, selector)` / `revert(html, selector)` pair.
 The original value is stashed in a `data-verity-original-*` attribute
 so the transform is reversible.
