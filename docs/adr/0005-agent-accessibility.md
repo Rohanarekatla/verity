@@ -1,8 +1,8 @@
 # ADR-0005: Phases 3–5 pivot to agent accessibility
 
-**Status:** PROPOSED — needs both signatures (team-plan §2.6)
+**Status:** ACCEPTED (2026-10-20)
 **Date:** 2026-10-20
-**Proposed by:** Rohan Arekatla · **Awaiting:** Nikhil
+**Proposed by:** Rohan Arekatla · **Agreed:** Nikhil
 **Supersedes:** the vision-productionisation scope of Phases 3–5 in
 `execution-plan.md` (Weeks 11–13 vision items; parts of 14–18). ADR-0002
 (vision descoped to an experiment) stays in force.
@@ -109,4 +109,4 @@ is a novel, citable result; the CLI is a one-command, any-provider tool.
 ## Signatures
 
 - Rohan Arekatla — proposed 2026-10-20
-- Nikhil — _pending_
+- Nikhil — agreed 2026-10-20 (in conversation with Rohan; relayed by Rohan). Nikhil to add a written confirmation line here or on PR #32.
