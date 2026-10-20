@@ -1,5 +1,10 @@
 # Execution Plan — All 20 Weeks
 
+> **2026-10-20:** Phases 3–5 are revised — *PLAN v2 — Phases 3–5 revised:
+> agent accessibility* is the plan in force (ADR-0005, accepted). The original
+> Phases 3–5 are kept below for history.
+
+
 Condensed, greppable transcription of *Verity — Execution Plan*
 (10 Aug 2026 → 10 Jan 2027). The source PDF is authoritative and has
 fuller reasoning; this exists so the schedule is in the repo, next to
@@ -239,7 +244,316 @@ all injected misuse fails; zero false alarms.
 
 ---
 
+# PLAN v2 — PHASES 3–5 REVISED: AGENT ACCESSIBILITY · W10–20 · 26 Oct – 10 Jan
+
+> **Status: IN FORCE (ADR-0005 accepted 2026-10-20).** It supersedes the
+> original Phases 3–5 kept below for history. Research behind every choice:
+> `docs/research/agent-accessibility-2026.md`.
+
+**The thesis.** Accessibility for people and for AI agents is the same
+engineering problem — both read the web through the accessibility tree — and
+Verity is the only tool that measures both, with verdicts a deterministic
+check stands behind. **The model proposes, the maths decides** applies to
+agents exactly as it did to vision.
+
+**What ships on 10 Jan (four deliverables, priority order):**
+
+| # | Deliverable | One line |
+|---|---|---|
+| D1 | **Agent Accessibility Benchmark** | First controlled, pre-registered study of how WCAG defects change web-agent task success — per defect type, agent type, model |
+| D2 | **`verity agent-check`** | One command: an LLM agent attempts your site's task through the a11y tree + keyboard; every failure pinned to a step and *confirmed* by Verity, or marked needs-review |
+| D3 | **Verifier-gated remediation** | Verity as an MCP server; a fix loop that accepts a patch only when Verity proves the defect gone and no regression; WebMCP checks + declarations |
+| D4 | **Agent Readiness Report** | Deterministic agent-readiness scan of a large public site list + real agent tasks on a sample — the launch headline |
+
+## Operating rules for v2 (why this plan works)
+
+1. **Always shippable.** Every milestone leaves a releasable product: M1 (W12)
+   benchmark v1 results are a publishable blog post on their own; M2 (W14) is
+   agent-check; M3 (W16) remediation. A slip removes the *last* milestone, never
+   breaks an earlier one.
+2. **Pre-registration before measurement.** Hypotheses, metrics, sample sizes
+   and analysis are committed (W11) before any benchmark run. A null result is
+   publishable; a fished result is not.
+3. **Budget is a gate, not a hope.** The runner enforces a hard spend cap; the
+   W10 pilot measures tokens/episode before any run is sized.
+4. **Pinned environments.** Every app under test is a vendored, pinned commit
+   in Docker. Upstream churn cannot break a result.
+5. **The cut order is fixed now** (end of this section), so nobody negotiates
+   scope at 1 a.m. in Week 17.
+6. **Kill criteria keep their teeth** (ADR-0005), and the deterministic product
+   ships regardless — exactly as ADR-0002 guaranteed for vision.
+
+## Architecture additions
+
+```
+                ┌──────────────── Python ────────────────┐
+ tasks + truth  │ eval/agentbench/                        │
+ (YAML) ───────▶│   runner ── budget cap, seeds, resume   │
+                │   agents/ ── tree_agent (ours, AXTree)  │──▶ results/*.parquet ──▶ analysis (CIs, paired tests)
+                │           ── browser_use (DOM+vision)   │
+                │           ── sr_agent (virtual SR, B9.2)│
+                │   providers/ ── Anthropic · OpenAI ·    │
+                │                 Ollama (local)          │
+                └──────┬──────────────────────────────────┘
+                       │ Playwright (BrowserGym-compatible obs/actions)
+                ┌──────▼──────────────────────────────────┐
+                │ environments: MiniWoB++ (BrowserGym)    │
+                │   · vendored apps in Docker (pinned)    │
+                │   · WebArena shopping/forum (fallback)  │
+                │ defect injection at page load           │──▶ injection verified by Verity (A14.2)
+                │   (init scripts reusing eval/inject)    │
+                └─────────────────────────────────────────┘
+ verity agent-check ── same agent + Verity's deterministic checks on the failing step
+ verity mcp          ── scan · sample contrast · traverse · contracts · virtual SR · baseline diff
+```
+
+Defects are injected **at page load** (Playwright init scripts built from the
+existing `eval/inject` injectors), so the apps' source never changes, every
+variant is reproducible from (app commit, injector, seed), and Verity verifies
+that exactly the intended defect — and no other — is present (pulled forward
+from A14.2).
+
+## Week 10 · 26 Oct – 1 Nov — Pilot, harness skeleton, model providers
+
+**Learning:** BrowserGym's observation/action spaces; why tree-only agents are
+the right primary subject (it is the interface Playwright MCP and Atlas use);
+tokens-per-episode economics; prompt caching.
+**Artifact (both):** **the pilot** — one tree-only agent, one local and one
+frontier model, 5 MiniWoB++ tasks × {clean, label stripped, div-button}, 10
+trials each. Its only job is to measure cost and variance so W12 can be sized.
+
+| # | A | | # | B |
+|---|---|---|---|---|
+| A10.1–3 | ✅ Done 19 Oct (image inventory, store-once crops, OCR triage) | | B10.1–2 | OCR / grounding → **optional**, behind the ADR-0002 flag |
+| A10.4 | `eval/agentbench/agents/tree_agent.py` — AXTree-only observation, BrowserGym action set, step cap, full trace | | B10.3′ | **Provider layer** (was "model loader"): Anthropic, OpenAI, Ollama behind one interface; token + cost accounting per call; prompt caching |
+| A10.5 | Runtime injection: `eval/inject` → Playwright init scripts | | B10.4 | Model-load vs inference timing (kept; now per provider) |
+
+▶ **Gate Sun 1 Nov —** pilot ran; tokens/episode, cost/episode and
+per-cell variance recorded in `docs/measurements/agentbench-pilot.md`.
+**Failure:** no budget is committed to W12 until it passes.
+
+## Week 11 · 2–8 Nov — Benchmark design and pre-registration
+
+**Learning:** experimental design for nondeterministic agents — paired
+designs, McNemar's test, Wilson intervals, power; prevalence weighting
+(WebAIM Million 2026: low contrast 83.9%, missing alt 53.1%, missing labels 51%,
+empty links 46.3%, empty buttons 30.6%).
+**Artifact (both):** **`docs/agentbench/preregistration.md`** — hypotheses,
+primary metric (task success, paired clean vs defect), secondary metrics
+(steps, tokens, cost), sample sizes from the pilot's variance, exclusion rules,
+analysis code — committed and tagged **before any W12 run**.
+
+Hypotheses to pre-register:
+- **H1** Name defects (missing label / empty button / div-as-button) reduce
+  tree-only agent success.
+- **H2** Vision-capable agents are less affected than tree-only agents.
+- **H3** Keyboard traps and focus defects hurt the screen-reader agent most.
+- **H4** Accessible pages cost fewer tokens per successful task.
+
+| # | A | | # | B |
+|---|---|---|---|---|
+| A11.1′ | Task suite: 20–30 tasks across **2–3 vendored apps** (pinned Docker; candidates: a RealWorld/Conduit frontend, an e-commerce demo, an admin/forms app) + MiniWoB++ families | | B11.1′ | **Deterministic success evaluators** per task (app state / DB / URL checks — no LLM judging success) |
+| A11.2′ | **Injection verification** (pulled from A14.2): Verity asserts exactly the intended defect, nothing else; failure aborts the variant | | B11.2′ | **Schema linter + escapes** (kept from A11.1/B11.2) — applied to every agent and checker output: closed vocabularies carry `unknown` |
+| A11.3 | Deterministic alt heuristics + decorative detection (kept, A11.2–A11.3) | | B11.3′ | Pre-registration document + analysis notebook |
+
+**Pair:** sign the pre-registration; tag the commit.
+▶ **Gate Sun 8 Nov —** every (task × defect) cell has a verified injection and
+a deterministic evaluator; pre-registration tagged. **Failure:** no
+measurement run starts.
+
+## Week 12 · 9–15 Nov — Benchmark runs v1 (milestone M1)
+
+**Learning:** experiment runners at scale — idempotency, resumability,
+seeding, caching, cost caps; why you never look at results mid-run.
+**Artifact (both):** `docs/agentbench/results-v1.md` — every pre-registered
+analysis, including the ones that came out null.
+
+| # | A | | # | B |
+|---|---|---|---|---|
+| A12.1′ | Runner: parallel episodes, resumable, per-episode trace, **hard budget cap** | | B12.1′ | Runs: tree agent × {2 local, 1 frontier} models × full suite × N trials |
+| A12.2′ | Results store (Parquet) + dashboards (success by defect × agent × model) | | B12.2′ | Statistics: paired tests, intervals, effect sizes; per-defect-type tables |
+| A12.3′ | Trace viewer: replay an episode step by step with the AXTree the agent saw | | B12.3′ | Cost model: $/successful task, tokens/step, clean vs defect |
+
+▶ **Gate Sun 15 Nov — M1:** results v1 with intervals published internally;
+blog post drafted. **Kill criterion:** clean-page success < 30% for the best
+model → switch the primary suite to MiniWoB++ + simplest app tasks (effect
+unmeasurable at the floor).
+
+## Week 13 · 16–22 Nov — More agents, agent security, observability
+
+**Learning:** indirect prompt injection against web agents (WASP: hijack rates
+up to 86%); plan-then-execute and untrusted-content defences; why a tool that
+quietly checks less than it claims is worse than none (kept from W13).
+**Artifact (both):** `docs/degradation.md` (kept) — now including every way an
+agent run can partially fail and what the report must say.
+
+| # | A | | # | B |
+|---|---|---|---|---|
+| A13.1′ | **browser-use** agent (DOM + vision) wired into the runner | | B13.1′ | **Screen-reader agent** on the virtual SR (B9.2) — perceives only announcements, acts only by keyboard |
+| A13.2′ | Injection-attack pages (WASP-style) as a benchmark track; hijack rate per agent | | B13.2′ | Hardening of *our* agents: plan-then-execute, page text tagged untrusted, tool allow-list; measured against A13.2′ |
+| A13.3 | State labelling + loop guard (kept, A13.2–A13.3) | | B13.3 | `verity-trace.json` + graceful degradation (kept, B13.1–B13.4) |
+
+**Pair:** Bus-factor #3; Rotation #3 (agents A → B, evaluators B → A).
+▶ **Gate Sun 22 Nov —** three agent types × clean/defect measured; our agents'
+hijack rate measured and reduced; kill the model backend mid-run → the run
+completes and says exactly what was not checked.
+
+## Week 14 · 23–29 Nov — `verity agent-check` (milestone M2)
+
+**Learning:** failure localisation — from "the agent gave up" to "step 7, the
+Submit control has no accessible name (4.1.2)"; why an unconfirmed agent
+failure must never be reported as a site defect.
+**Artifact (both):** hand-localise five real agent failures before writing the
+localiser.
+
+| # | A | | # | B |
+|---|---|---|---|---|
+| A14.1′ | CLI: `verity agent-check URL --task "…" [--success "…"]`, any provider incl. local | | B14.1′ | **Confirmation**: run Verity's deterministic checks (names, contracts, traversal, contrast) on the failing step's target → *confirmed* or *needs-review* |
+| A14.2′ | Report: SARIF (inline PR annotations), JSON, HTML trace; GitHub Action input | | B14.2′ | **Agent-readiness score**: static (tree well-formed, names, stability, WebMCP) + dynamic (task success) — evidence for every point |
+| A14.3 | Complete injector set (~15 types) + prevalence weighting (kept, A14.1/A14.3) | | B14.3 | `eval/` per-SC precision/recall harness + baseline freeze (kept, B14.1–B14.4) |
+
+▶ **Gate Sun 29 Nov — M2:** on the injected corpus, agent-check localises the
+injected defect in ≥ 80% of agent failures with **zero** wrong confirmations.
+**Failure:** confirmations are disabled (everything needs-review) until zero.
+
+## Week 15 · 30 Nov – 6 Dec — MCP server and verifier-gated fixes
+
+**Learning:** tool design for coding agents (schemas, small outputs, idempotent
+calls); verifier-gated generation; why fix rate without regression rate is a
+vanity metric.
+**Artifact (both):** one fix done by hand through the MCP tools, end to end,
+before the loop is automated.
+
+| # | A | | # | B |
+|---|---|---|---|---|
+| A15.1′ | **Verity MCP server**: scan, explain finding, sample contrast, traverse, run contract, virtual-SR read, baseline diff | | B15.1′ | **Fix loop**: finding → locate source → minimal patch in a sandbox → rebuild → re-scan → accept only if resolved **and** baseline shows no new finding; else retry ≤ 3, then hand off with reasons |
+| A15.2′ | Source mapping: selector → file (source maps, React dev builds, plain HTML first) | | B15.2′ | Fix eval on injected defects in the vendored apps: fix rate, regression rate, patch size, $/fix; compared with published LLM-repair results |
+| A15.3 | ACT runner, compressed (kept, A15.1–A15.3) | | B15.3 | EARL report (kept, B15.1) |
+
+▶ **Gate Sun 6 Dec —** fix loop: ≥ 60% of injected name/label/alt/contrast
+defects fixed with **0 accepted regressions**; ACT pass rate published honestly.
+
+## Week 16 · 7–13 Dec — WebMCP and the ACR (milestone M3)
+
+| # | A | | # | B |
+|---|---|---|---|---|
+| A16.1′ | WebMCP readiness checks (registered tools, form coverage, schema validity) | | B16.1 | ACR/VPAT: all criteria rows, honest conformance values (kept, B16.1–B16.3) |
+| A16.2′ | WebMCP declaration generator for forms — verified by an agent actually using the tool | | B16.2 | AI-assisted rows labelled as such; untested never "Supports" (kept, A16.2–A16.3) |
+
+**Pair:** Rotation #4 (report generation B → A).
+▶ **Gate Sun 13 Dec — M3:** ACR presentable to a compliance officer;
+a generated WebMCP tool is used successfully by an agent in a demo.
+
+## Week 17 · 14–20 Dec — Scale: the Agent Readiness Report, performance
+
+| # | A | | # | B |
+|---|---|---|---|---|
+| A17.1 | Bounded crawl, caching, Docker image (kept, A17.1/B17.1–B17.2; secondary platform condensed to the image) | | B17.1′ | **Readiness scan** of a large public site list (deterministic, cheap) |
+| A17.2 | Authenticated crawling, credentials never committed (kept, A17.2) | | B17.2′ | **Agent tasks on a sampled subset** (budget-capped), confirmed failures only |
+| A17.3 | 25-page audit within CI budget (kept, B17.3) | | B17.3′ | Report analysis + figures |
+
+**Pair:** Bus-factor #4.
+▶ **Gate Sun 20 Dec —** report data complete and reproducible; 25-page audit
+within CI budget.
+
+## Week 18 · 21–27 Dec — BUFFER · paper and demo
+
+⚠ Buffer first: absorb any slip here. Only then:
+- Paper-style write-up of D1 (method, pre-registration, results, limits) —
+  arXiv-ready.
+- 3-minute demo video: agent fails on a broken page → Verity pins and confirms
+  the defect → fix loop patches it → agent succeeds.
+
+▶ **Gate Sun 27 Dec —** draft paper reviewed by both; demo recorded.
+
+## Week 19 · 28 Dec – 3 Jan — BUFFER · docs, licences, outside install (kept)
+
+S19.1–S19.6 as written, plus: model/provider licence and terms checked for
+every model used in published results; the benchmark's data card.
+▶ **Gate Sun 3 Jan —** an outside person installs and runs both `verity scan`
+and `verity agent-check` from the README alone.
+
+## Week 20 · 4–10 Jan — Public release and launch
+
+| # | S |
+|---|---|
+| S20.1 | Security pass (kept) — incl. no API keys in traces, results or screenshots |
+| S20.2 | Release: tagged, `pip`/`npx` installable, GitHub Action updated with `agent-check` |
+| S20.3 | Publish: benchmark data + code + paper (arXiv), Agent Readiness Report, results site |
+| S20.4 | Launch: Show HN, r/webdev, r/accessibility, LinkedIn, dev.to; reach out to web.dev / Chrome DevRel / WebAIM / a11y and agent communities |
+| S20.5 | Kill-criteria retrospective (kept) |
+
+▶ **Gate Sun 10 Jan —** public, installable, documented; benchmark
+reproducible from a clean checkout; both engineers can explain and debug
+every component.
+
+## Gate summary (v2)
+
+| Date | Gate | If it fails |
+|---|---|---|
+| Sun 1 Nov | Pilot measured cost + variance | No run budget committed |
+| Sun 8 Nov | Verified injections, deterministic evaluators, pre-registration tagged | No measurement starts |
+| **Sun 15 Nov** | **M1: results v1 with intervals** | **Floor < 30% → MiniWoB++ primary** |
+| Sun 22 Nov | 3 agent types; hijack rate measured + reduced; honest degradation | Ship with fewer agent types; never hide gaps |
+| **Sun 29 Nov** | **M2: agent-check — 0 wrong confirmations** | **Confirmations off until zero** |
+| Sun 6 Dec | Fix loop ≥ 60%, 0 accepted regressions | Ship MCP tools without the loop |
+| Sun 13 Dec | M3: ACR presentable; WebMCP demo | Drop WebMCP generator (keep checks) |
+| Sun 20 Dec | Report data reproducible; CI budget met | Shrink report sample |
+| Sun 27 Dec | Paper + demo | Blog post instead of paper |
+| Sun 3 Jan | Outside install from README | Fix docs before release |
+| Sun 10 Jan | Public | — |
+
+## Cut order (fixed now — cut from the top)
+
+1. WebMCP declaration generator (keep the checks)
+2. Agent Readiness Report's agent-task sample (keep the deterministic scan)
+3. browser-use agent (keep tree + screen-reader agents)
+4. ACT submission (keep the measured pass rate)
+5. Fix loop automation (keep the MCP server)
+
+**Never cut:** pre-registration, injection verification, the confirmation rule,
+the eval harness, the outside-person install test.
+
+## Budget
+
+| Item | Plan |
+|---|---|
+| Local models | Qwen3-8B / 14B via Ollama for bulk runs — free beyond hardware time (MiniWoB++ ~49–55% unfine-tuned) |
+| Frontier API | One frontier model on a capped subset; prompt caching; **hard cap enforced by the runner** — set the cap in W10 from the pilot (suggested envelope: $150–300 total) |
+| Infra | Local Docker for vendored apps; BrowserGym MiniWoB++ needs no services; WebArena only if a fallback is needed (heavy) |
+
+## Risk register
+
+| Risk | Likelihood | Mitigation | Owner |
+|---|---|---|---|
+| LLM cost overrun | Med | Pilot-sized runs; local-first; hard cap; caching | A |
+| Agent variance swamps the effect | Med | Paired design, power from pilot, pre-registered N | B |
+| Testbed apps break / unmaintained | Med | Vendored pinned commits in Docker; MiniWoB++/WebArena fallback | A |
+| Defect injection creates a second defect | Med | Injection verification aborts the variant (A11.2′) | A |
+| Prompt injection hijacks our agents | High | Security track + hardening + untrusted tagging; measured | B |
+| Source mapping too hard for frameworks | High | Plain HTML + React dev builds first; MCP-only fallback | A |
+| Null benchmark result | Low–Med | Pre-registered → publishable; lead launch with agent-check | both |
+| iCloud-synced checkout corrupts git state | **Observed** | Move repo off Desktop before W10 | Rohan |
+
+## Ownership and what each engineer can claim
+
+Rotations keep both deep in both halves (bus-factor rule).
+
+| | Rohan (A) | Nikhil (B) |
+|---|---|---|
+| Agents | tree agent, browser-use, MCP server, agent-check CLI | screen-reader agent, agent hardening, fix loop |
+| Evals | runner, injection + verification, trace viewer | evaluators, pre-registration, statistics, fix eval |
+| Interview story | "I built a reproducible agent-benchmark harness with verified ground truth and a budget-capped runner" | "I designed a pre-registered evaluation and a verifier-gated fix agent with 0 accepted regressions" |
+
+---
+
 # PHASE 3 — VISION PRODUCTIONISATION · W10–13 · 26 Oct – 22 Nov
+
+> **SUPERSEDED by PLAN v2 (ADR-0005, accepted 2026-10-20).** Kept for
+> history; the items v2 keeps are cross-referenced there by their original
+> numbers.
+
+
 
 *Make model output trustworthy enough to show a stranger.*
 
@@ -539,6 +853,9 @@ architecture. The differentiator degrades; it does not disappear.**
 ---
 
 # Best-in-class backlog — competitive differentiation
+
+> **2026-10-20:** BC-C2 (benchmark) is done; PLAN v2 turns BC-B2/BC-B4 and
+> the C-section distribution strategy into scheduled work (D1–D4).
 
 > **Added 2026-10-18**, from a competitive analysis of the top tools in this
 > space (axe-core, Lighthouse, Pa11y, IBM Equal Access, Microsoft
