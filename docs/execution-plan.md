@@ -1,7 +1,8 @@
 # Execution Plan — All 20 Weeks
 
-> **2026-10-20:** Phases 3–5 have a proposed revision — see *PLAN v2 —
-> Phases 3–5 revised: agent accessibility* and ADR-0005. Pending both signatures.
+> **2026-10-20:** Phases 3–5 are revised — *PLAN v2 — Phases 3–5 revised:
+> agent accessibility* is the plan in force (ADR-0005, accepted). The original
+> Phases 3–5 are kept below for history.
 
 
 Condensed, greppable transcription of *Verity — Execution Plan*
@@ -245,9 +246,9 @@ all injected misuse fails; zero false alarms.
 
 # PLAN v2 — PHASES 3–5 REVISED: AGENT ACCESSIBILITY · W10–20 · 26 Oct – 10 Jan
 
-> **Status: PROPOSED (2026-10-20) — becomes the plan when ADR-0005 is signed
-> by both engineers.** Until then the original Phases 3–5 below remain in
-> force. Research behind every choice: `docs/research/agent-accessibility-2026.md`.
+> **Status: IN FORCE (ADR-0005 accepted 2026-10-20).** It supersedes the
+> original Phases 3–5 kept below for history. Research behind every choice:
+> `docs/research/agent-accessibility-2026.md`.
 
 **The thesis.** Accessibility for people and for AI agents is the same
 engineering problem — both read the web through the accessibility tree — and
@@ -548,9 +549,9 @@ Rotations keep both deep in both halves (bus-factor rule).
 
 # PHASE 3 — VISION PRODUCTIONISATION · W10–13 · 26 Oct – 22 Nov
 
-> **Original Phases 3–5 (below) — in force until ADR-0005 is signed.** If
-> ADR-0005 is accepted, *PLAN v2* above supersedes them; the items v2 keeps
-> are cross-referenced there by their original numbers.
+> **SUPERSEDED by PLAN v2 (ADR-0005, accepted 2026-10-20).** Kept for
+> history; the items v2 keeps are cross-referenced there by their original
+> numbers.
 
 
 
