@@ -238,7 +238,8 @@ def test_the_ledger_resumes_from_disk_instead_of_granting_a_fresh_budget(tmp_pat
     first = CostLedger(cap_usd=10, path=path)
     anthropic(FakeTransport(ANTHROPIC_OK), ledger=first).complete(USER)
     resumed = CostLedger(cap_usd=10, path=path)
-    assert resumed.total_usd == pytest.approx(first.total_usd) > 0
+    assert first.total_usd > 0
+    assert resumed.total_usd == pytest.approx(first.total_usd)
 
 
 def test_an_uncosted_call_cannot_be_recorded_under_a_cap():
