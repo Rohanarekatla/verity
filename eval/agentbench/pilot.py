@@ -30,8 +30,10 @@ from eval.agentbench.providers.base import BaseProvider, ProviderError
 
 # The pilot matrix defaults (small, by design — this sizes W12, it is not W12).
 PILOT_TASKS = ("click-button", "click-link", "enter-text", "click-checkboxes", "login-user")
-# variant name -> defect passed to env.reset (None = the clean control).
-PILOT_VARIANTS = {"clean": None, "label-stripped": "stripName", "div-button": "divButton"}
+# variant name -> defect passed to env.reset (None = the clean control). Defect
+# names are defects.js's (strip_name removes a control's name; div_button
+# removes a button's role) — the plan's "label stripped" / "div-button".
+PILOT_VARIANTS = {"clean": None, "strip_name": "strip_name", "div_button": "div_button"}
 PILOT_TRIALS = 10
 
 
