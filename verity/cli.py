@@ -268,6 +268,98 @@ async def run_cli_scan(
         return EXIT_SCAN_ERROR
 
 
+def run_agent_check_cli(
+    url: str,
+    task: str,
+    *,
+    success: Optional[str] = None,
+    model_spec: str = "ollama:llama3.1",
+    json_path: Optional[str] = None,
+    sarif_path: Optional[str] = None,
+    html_path: Optional[str] = None,
+    config_path: Optional[str] = None,
+    headless: bool = True,
+) -> int:
+    """
+    A14.1′/A14.2′ — run `verity agent-check`.
+
+    An LLM agent attempts `task` on `url` through the accessibility tree +
+    keyboard. A failure is localised and reported, but — the Week-14 safety rule
+    — only as `needs-review` unless a deterministic confirmer (B14.1′) upgrades
+    it, so an unconfirmed agent failure never gates CI. Success, when `--success`
+    is given, is decided by the deterministic evaluators, never a model.
+    """
+    from eval.agentbench.agents.tree_agent import TreeAgent
+    from eval.agentbench.loop_guard import LoopGuard
+    from eval.agentbench.providers import make_provider
+    from eval.agentbench.web_env import WebEnv
+    from verity.agent_check.check import agent_check
+    from verity.agent_check.report import write_reports
+    from verity.report.policy import load_policy
+
+    try:
+        policy = load_policy(config_path)
+        provider = make_provider(model_spec, allow_unpriced=True)
+        agent = TreeAgent(provider, loop_guard=LoopGuard())
+
+        success_fn = None
+        if success:
+            import yaml
+
+            from eval.agentbench.evaluators import evaluate, observation_from_page
+
+            spec = yaml.safe_load(success)
+
+            def success_fn(env, _spec=spec):  # noqa: E306 — closure over the parsed spec
+                obs = observation_from_page(env.page, _spec)
+                return evaluate(_spec, obs, task_id=url).outcome
+
+        target = normalize_target(url)
+        logger.info("Agent-check: %r on %s via %s", task, target, model_spec)
+        with WebEnv(target, goal=task, headless=headless) as env:
+            result = agent_check(target, task, agent=agent, env=env, success_fn=success_fn)
+
+        # Gating respects the loaded policy's `fail_on` (agent-check findings are
+        # needs-review, so they do not gate); annotation is widened to
+        # needs-review so the agent failure actually appears in SARIF.
+        from verity.report.policy import CiPolicy
+
+        report_policy = CiPolicy(fail_on=policy.fail_on, annotate_on="everything")
+        written = write_reports(result, json_path=json_path, sarif_path=sarif_path,
+                                html_path=html_path, policy=report_policy)
+
+        print("\n" + "=" * 60)
+        print(" VERITY AGENT-CHECK")
+        print("=" * 60)
+        print(f" Target : {target}")
+        print(f" Task   : {task}")
+        print(f" Verdict: {result.verdict.upper()}  (success decided by: {result.success_source})")
+        if result.findings:
+            f = result.findings[0]
+            print("-" * 60)
+            print(f" {f.provenance.value.upper()} · SC {f.sc.id} {f.sc.name}")
+            print(f"   {f.message}")
+            if f.evidence.dom_selector:
+                print(f"   element: {f.evidence.dom_selector}")
+        for kind, path in written.items():
+            print(f" {kind}: {path.resolve()}")
+        print("=" * 60 + "\n")
+
+        gating = policy.gating_findings(result.findings)
+        if gating:
+            logger.info("%d gating finding(s) under %s — exit %d.",
+                        len(gating), policy.describe(), EXIT_GATING_FINDINGS)
+            return EXIT_GATING_FINDINGS
+        return EXIT_OK
+
+    except Exception as exc:
+        logger.error(
+            "Agent-check failed: %s. No verdict was reached (exit %d).",
+            exc or exc.__class__.__name__, EXIT_SCAN_ERROR,
+        )
+        return EXIT_SCAN_ERROR
+
+
 def main() -> None:
     """CLI Argument Parser entry point."""
     parser = argparse.ArgumentParser(
@@ -341,9 +433,37 @@ def main() -> None:
         help="Fail only on findings absent from this baseline (see --write-baseline)",
     )
 
+    # 'agent-check' command (A14.1′/A14.2′) — does an AI agent complete a task?
+    ac = subparsers.add_parser(
+        "agent-check",
+        help="Have an AI agent attempt a task on a URL through the a11y tree; localise failures",
+    )
+    ac.add_argument("url", type=str, help="Target URL or local HTML file")
+    ac.add_argument("--task", type=str, required=True,
+                    help='What the agent should do, e.g. "Add the first product to the cart"')
+    ac.add_argument("--success", type=str, default=None,
+                    help="A deterministic success spec (YAML/JSON) checked after the run; "
+                         "without it, success is the agent's own verdict")
+    ac.add_argument("--model", type=str, default="ollama:llama3.1", metavar="SPEC",
+                    help="Provider spec, e.g. anthropic:claude-sonnet-5-5 or ollama:llama3.1 (default)")
+    ac.add_argument("--json", type=str, default=None, metavar="PATH", help="Write the JSON report")
+    ac.add_argument("--sarif", type=str, default=None, metavar="PATH",
+                    help="Write SARIF for GitHub code scanning / the Verity Action")
+    ac.add_argument("--html", type=str, default=None, metavar="PATH",
+                    help="Write an HTML trace replaying every step with the tree the agent saw")
+    ac.add_argument("-c", "--config", type=str, default=None, metavar="PATH",
+                    help="Config file with a `ci: { fail_on, annotate_on }` block")
+    ac.add_argument("--headed", action="store_true", help="Show the browser (debugging)")
+
     args = parser.parse_args()
 
-    if args.command == "scan":
+    if args.command == "agent-check":
+        sys.exit(run_agent_check_cli(
+            url=args.url, task=args.task, success=args.success, model_spec=args.model,
+            json_path=args.json, sarif_path=args.sarif, html_path=args.html,
+            config_path=args.config, headless=not args.headed,
+        ))
+    elif args.command == "scan":
         worker_cmd_list = args.worker_cmd.split() if args.worker_cmd else None
         exit_code = asyncio.run(
             run_cli_scan(
