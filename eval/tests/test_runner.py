@@ -74,7 +74,7 @@ class FakeAgent:
         self._raise_on = raise_on          # a defect value to raise on, or "all"
         self._exc = exc
 
-    def run(self, env, task, seed, defect=None):
+    def run(self, env, task, seed, defect=None, attack=None):
         if self._raise_on is not None and (self._raise_on == "all" or self._raise_on == defect):
             raise self._exc
         return _result(task, seed, defect, provider=self.provider.name)
@@ -94,7 +94,7 @@ def _run(out, **kw):
         models={"m": "fake:fake-1"}, out_dir=out, tasks=TASKS, trials=1,
         env_factory=FakeEnv,
         provider_factory=lambda label, spec, ledger: FakeProvider(),
-        agent_factory=lambda p: FakeAgent(p),
+        agent_factory=lambda name, p: FakeAgent(p),
         verify_fn=_ok_verify,
     )
     defaults.update(kw)
@@ -167,7 +167,7 @@ def test_unverified_injection_is_excluded_and_not_measured(tmp_path):
 def test_provider_error_is_excluded_not_counted_as_failure(tmp_path):
     report = _run(
         tmp_path,
-        agent_factory=lambda p: FakeAgent(p, raise_on="all", exc=ProviderError("fake", "boom")),
+        agent_factory=lambda name, p: FakeAgent(p, raise_on="all", exc=ProviderError("fake", "boom")),
     )
     assert report.run == 0
     assert report.excluded.get("provider_error") == 4
@@ -178,7 +178,7 @@ def test_provider_error_is_excluded_not_counted_as_failure(tmp_path):
 def test_budget_exceeded_stops_the_run(tmp_path):
     report = _run(
         tmp_path,
-        agent_factory=lambda p: FakeAgent(p, raise_on="all", exc=BudgetExceeded(10.0, 1.0, 10.0)),
+        agent_factory=lambda name, p: FakeAgent(p, raise_on="all", exc=BudgetExceeded(10.0, 1.0, 10.0)),
     )
     assert report.budget_stopped is True
     # The run halted after the first refused episode, not after all four.
