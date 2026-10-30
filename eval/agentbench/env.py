@@ -20,11 +20,15 @@ import json
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
-
-from playwright.sync_api import Browser, Page, sync_playwright
+from typing import TYPE_CHECKING, Optional
 
 from eval.agentbench.attacks import ATTACKS_JS
+
+if TYPE_CHECKING:  # type-only: never imported at runtime, so the module (and
+    # its Episode/Step/constants) loads without Playwright installed — CI and
+    # any pure consumer import it without a browser lib. Playwright is imported
+    # lazily in __enter__, where a browser is actually launched.
+    from playwright.sync_api import Browser, Page
 
 HERE = Path(__file__).resolve().parent
 MINIWOB = HERE / "vendor" / "miniwob-plusplus" / "miniwob" / "html" / "miniwob"
@@ -116,6 +120,8 @@ class MiniWoBEnv:
         self.page: Optional[Page] = None
 
     def __enter__(self) -> "MiniWoBEnv":
+        from playwright.sync_api import sync_playwright
+
         self._pw = sync_playwright().start()
         self.browser = self._pw.chromium.launch(headless=self.headless, executable_path=chromium_path())
         return self
