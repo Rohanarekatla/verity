@@ -1,0 +1,12 @@
+# Agent Readiness Report — sample site list (B17.1′).
+# The published report uses a public ranking (e.g. a Tranco top-N CSV: "rank,domain"),
+# chosen and recorded at run time. This short list is the pipeline smoke test —
+# the sites already used in docs/measurements/.
+https://www.gov.uk/
+https://www.w3.org/WAI/
+https://en.wikipedia.org/wiki/Web_accessibility
+https://developer.mozilla.org/en-US/
+https://github.com/
+https://www.bbc.co.uk/news
+https://www.apple.com/
+https://stripe.com/
