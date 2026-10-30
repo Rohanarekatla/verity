@@ -32,6 +32,20 @@ jobs:
       - run: uv sync
       - run: uv run pytest verity/tests/ -v
 
+  docker-image:
+    name: readiness image (build + smoke)
+    runs-on: ubuntu-latest   # macOS runners have no Docker daemon
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the readiness-scan image
+        run: docker build -f deploy/Dockerfile -t verity:ci .
+      # Smoke tests that need no browser: the entrypoint runs and imports load,
+      # and a real subcommand (webmcp, static HTML) works end to end in-image.
+      - name: Smoke — CLI entrypoint
+        run: docker run --rm verity:ci --help
+      - name: Smoke — webmcp on a bundled fixture
+        run: docker run --rm verity:ci webmcp /app/data/fixtures/contrast-fail.html
+
   contract:
     name: cross-language contract check
     runs-on: macos-latest

@@ -68,27 +68,9 @@
           "ruleIndex": 0,
           "level": "error",
           "message": {
-            "text": "Contrast 1.14:1 fails SC 1.4.3 (element: #hero)"
+            "text": "Contrast 1.14:1 fails SC 1.4.3 (element: #hero) [file:///verity/data/fixtures/contrast-fail.html]"
           },
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "data/fixtures/contrast-fail.html"
-                },
-                "region": {
-                  "startLine": 1,
-                  "startColumn": 1
-                }
-              },
-              "logicalLocations": [
-                {
-                  "name": "#hero",
-                  "kind": "element"
-                }
-              ]
-            }
-          ],
+          "locations": [],
           "partialFingerprints": {
             "verityFindingSignature/v2": "f84d07e21710a06b5fffcfe5144167bf79c71cc9b6c9c64ff37b3193a4d48808"
           },
@@ -110,27 +92,9 @@
           "ruleIndex": 1,
           "level": "warning",
           "message": {
-            "text": "Contrast 1.14:1 fails SC 1.4.3 (element: #logo)"
+            "text": "Contrast 1.14:1 fails SC 1.4.3 (element: #logo) [file:///verity/data/fixtures/contrast-fail.html]"
           },
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "data/fixtures/contrast-fail.html"
-                },
-                "region": {
-                  "startLine": 1,
-                  "startColumn": 1
-                }
-              },
-              "logicalLocations": [
-                {
-                  "name": "#logo",
-                  "kind": "element"
-                }
-              ]
-            }
-          ],
+          "locations": [],
           "partialFingerprints": {
             "verityFindingSignature/v2": "9247f5a91245825f2e4649e9d251b1877c06f14afebcbc0a8a102ce5486bf1cb"
           },
@@ -153,27 +117,9 @@
           "ruleIndex": 0,
           "level": "note",
           "message": {
-            "text": "Contrast 1.14:1 fails SC 1.4.3 (element: #over-image)"
+            "text": "Contrast 1.14:1 fails SC 1.4.3 (element: #over-image) [file:///verity/data/fixtures/contrast-fail.html]"
           },
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "data/fixtures/contrast-fail.html"
-                },
-                "region": {
-                  "startLine": 1,
-                  "startColumn": 1
-                }
-              },
-              "logicalLocations": [
-                {
-                  "name": "#over-image",
-                  "kind": "element"
-                }
-              ]
-            }
-          ],
+          "locations": [],
           "partialFingerprints": {
             "verityFindingSignature/v2": "aeb7b8f3ddb57db9299af2d6e9be4cabcc35127698d80d779721f1543e266a82"
           },
@@ -192,12 +138,13 @@
         }
       ],
       "properties": {
-        "verity.target": "file:///C:/Users/Nikhil/OneDrive/Desktop/verity/data/fixtures/contrast-fail.html",
+        "verity.target": "file:///verity/data/fixtures/contrast-fail.html",
         "verity.standard": "WCAG2.2-AA",
         "verity.rulesetVersion": "1.0.0",
         "verity.policy": "fail_on=authoritative, annotate_on=everything",
-        "verity.inlineAnnotationsPossible": true,
-        "verity.latencySeconds": 2.0
+        "verity.inlineAnnotationsPossible": false,
+        "verity.latencySeconds": 2.0,
+        "verity.noInlineAnnotationReason": "target 'file:///verity/data/fixtures/contrast-fail.html' is not a file inside the repository; results appear in the Security tab without inline annotations"
       }
     }
   ]

@@ -140,11 +140,33 @@ async def run_cli_scan(
     config_path: Optional[str] = None,
     write_baseline_path: Optional[str] = None,
     baseline_path: Optional[str] = None,
+    trace_path: Optional[str] = None,
+    earl_path: Optional[str] = None,
 ) -> int:
     """Runs the scan orchestrator and saves/prints output."""
+    from verity.observability import ScanTrace, render_coverage
     from verity.report.policy import load_policy
     from verity.report.regression import gate_against_baseline, open_baseline
 
+    # B13.3 — every scan is traced, so the report can say what it did NOT
+    # check; `--trace` additionally writes verity-trace.json.
+    trace = ScanTrace()
+    try:
+        return await _run_cli_scan(url, output_path, timeout, worker_cmd, sarif_path, junit_path, config_path,
+                                   write_baseline_path, baseline_path, trace, load_policy,
+                                   gate_against_baseline, open_baseline, render_coverage, earl_path)
+    finally:
+        if trace_path:
+            try:
+                written = trace.finish().write(Path(trace_path))
+                logger.info("Trace written to %s", written)
+            except OSError as exc:
+                logger.warning("Could not write the trace to %s: %s", trace_path, exc)
+
+
+async def _run_cli_scan(url, output_path, timeout, worker_cmd, sarif_path, junit_path, config_path,
+                        write_baseline_path, baseline_path, trace, load_policy, gate_against_baseline,
+                        open_baseline, render_coverage, earl_path=None) -> int:
     try:
         # B8.4 — the gating policy is loaded before the scan, so a bad `ci:`
         # block fails immediately rather than after a 30-second render.
@@ -158,11 +180,12 @@ async def run_cli_scan(
         url = normalize_target(url)
         logger.info(f"Starting scan for URL: {url}")
         report: AuditReport = await scan_url(
-            url=url, node_worker_command=worker_cmd, timeout=timeout
+            url=url, node_worker_command=worker_cmd, timeout=timeout, trace=trace
         )
 
-        # Print human-readable summary
+        # Print human-readable summary, then what was and was not checked.
         print_report_summary(report)
+        print(render_coverage(trace))
 
         # Save to JSON file if requested
         if output_path:
@@ -194,6 +217,12 @@ async def run_cli_scan(
 
             written = write_junit(report, junit_path, policy=policy)
             logger.info(f"JUnit XML written to: {written.resolve()}")
+
+        # B15.3 — EARL 1.0 JSON-LD (the ACT implementation-report format).
+        if earl_path:
+            from verity.report.earl import write_earl
+
+            logger.info("EARL written to: %s", write_earl(report, earl_path).resolve())
 
         # A7.2 / A8.3 — record the current findings as a baseline. This is how
         # the baseline-commit workflow regenerates the file it proposes in a
@@ -265,6 +294,238 @@ async def run_cli_scan(
             f"Scan failed: {exc or exc.__class__.__name__}. "
             f"No accessibility verdict was reached (exit {EXIT_SCAN_ERROR})."
         )
+        return EXIT_SCAN_ERROR
+
+
+def run_agent_check_cli(
+    url: str,
+    task: str,
+    *,
+    success: Optional[str] = None,
+    model_spec: str = "ollama:llama3.1",
+    json_path: Optional[str] = None,
+    sarif_path: Optional[str] = None,
+    html_path: Optional[str] = None,
+    config_path: Optional[str] = None,
+    headless: bool = True,
+    confirm: bool = False,
+) -> int:
+    """
+    A14.1′/A14.2′ — run `verity agent-check`.
+
+    An LLM agent attempts `task` on `url` through the accessibility tree +
+    keyboard. A failure is localised and reported, but — the Week-14 safety rule
+    — only as `needs-review` unless a deterministic confirmer (B14.1′) upgrades
+    it, so an unconfirmed agent failure never gates CI. Success, when `--success`
+    is given, is decided by the deterministic evaluators, never a model.
+    """
+    from eval.agentbench.agents.tree_agent import TreeAgent
+    from eval.agentbench.loop_guard import LoopGuard
+    from eval.agentbench.providers import make_provider
+    from eval.agentbench.web_env import WebEnv
+    from verity.agent_check.check import agent_check
+    from verity.agent_check.report import write_reports
+    from verity.report.policy import load_policy
+
+    try:
+        policy = load_policy(config_path)
+        provider = make_provider(model_spec, allow_unpriced=True)
+        agent = TreeAgent(provider, loop_guard=LoopGuard())
+
+        success_fn = None
+        if success:
+            import yaml
+
+            from eval.agentbench.evaluators import evaluate, observation_from_page
+
+            spec = yaml.safe_load(success)
+
+            def success_fn(env, _spec=spec):  # noqa: E306 — closure over the parsed spec
+                obs = observation_from_page(env.page, _spec)
+                return evaluate(_spec, obs, task_id=url).outcome
+
+        target = normalize_target(url)
+        logger.info("Agent-check: %r on %s via %s", task, target, model_spec)
+        with WebEnv(target, goal=task, headless=headless) as env:
+            # B14.1′ — deterministic confirmation on the live page, opt-in
+            # until the Week-14 gate (zero wrong confirmations) is measured.
+            if confirm:
+                from verity.agent_check.confirm import make_confirm_fn
+
+                result = agent_check(target, task, agent=agent, env=env, success_fn=success_fn,
+                                     confirm_fn=make_confirm_fn(env))
+            else:
+                result = agent_check(target, task, agent=agent, env=env, success_fn=success_fn)
+
+        # Gating respects the loaded policy's `fail_on` (agent-check findings are
+        # needs-review, so they do not gate); annotation is widened to
+        # needs-review so the agent failure actually appears in SARIF.
+        from verity.report.policy import CiPolicy
+
+        report_policy = CiPolicy(fail_on=policy.fail_on, annotate_on="everything")
+        written = write_reports(result, json_path=json_path, sarif_path=sarif_path,
+                                html_path=html_path, policy=report_policy)
+
+        print("\n" + "=" * 60)
+        print(" VERITY AGENT-CHECK")
+        print("=" * 60)
+        print(f" Target : {target}")
+        print(f" Task   : {task}")
+        print(f" Verdict: {result.verdict.upper()}  (success decided by: {result.success_source})")
+        if result.findings:
+            f = result.findings[0]
+            print("-" * 60)
+            print(f" {f.provenance.value.upper()} · SC {f.sc.id} {f.sc.name}")
+            print(f"   {f.message}")
+            if f.evidence.dom_selector:
+                print(f"   element: {f.evidence.dom_selector}")
+        for kind, path in written.items():
+            print(f" {kind}: {path.resolve()}")
+        print("=" * 60 + "\n")
+
+        gating = policy.gating_findings(result.findings)
+        if gating:
+            logger.info("%d gating finding(s) under %s — exit %d.",
+                        len(gating), policy.describe(), EXIT_GATING_FINDINGS)
+            return EXIT_GATING_FINDINGS
+        return EXIT_OK
+
+    except Exception as exc:
+        logger.error(
+            "Agent-check failed: %s. No verdict was reached (exit %d).",
+            exc or exc.__class__.__name__, EXIT_SCAN_ERROR,
+        )
+        return EXIT_SCAN_ERROR
+
+
+def run_acr_cli(reports: list[str], *, product: str, manual: Optional[str] = None, aaa: bool = False,
+                out: Optional[str] = None, html_out: Optional[str] = None) -> int:
+    """B16.1/B16.2 — `verity acr`: an honest VPAT 2.5 (WCAG 2.2) ACR from saved scan reports."""
+    from verity.acr import build_acr, load_manual, render_html, render_markdown
+
+    try:
+        loaded = [AuditReport.model_validate_json(Path(p).read_text(encoding="utf-8")) for p in reports]
+        acr = build_acr(loaded, product=product, manual=load_manual(Path(manual) if manual else None),
+                        levels=("A", "AA", "AAA") if aaa else ("A", "AA"))
+        text = render_markdown(acr)
+        if out:
+            Path(out).parent.mkdir(parents=True, exist_ok=True)
+            Path(out).write_text(text, encoding="utf-8")
+        if html_out:
+            Path(html_out).parent.mkdir(parents=True, exist_ok=True)
+            Path(html_out).write_text(render_html(acr), encoding="utf-8")
+        print(text if not out else f"ACR written to {out} ({'complete' if acr.complete else 'DRAFT: '}"
+                                   f"{'' if acr.complete else str(len(acr.unevaluated)) + ' rows need a human'})")
+        return EXIT_OK
+    except Exception as exc:
+        logger.error("ACR failed: %s (exit %d).", exc or exc.__class__.__name__, EXIT_SCAN_ERROR)
+        return EXIT_SCAN_ERROR
+
+
+def run_readiness_cli(target: str, *, timeout: float = DEFAULT_TIMEOUT_S, stability: bool = False,
+                      json_path: Optional[str] = None, md_path: Optional[str] = None) -> int:
+    """B14.2′ — `verity readiness`: the agent-readiness score, with evidence per point."""
+    import dataclasses
+
+    from verity.readiness import readiness_for, render_markdown
+
+    try:
+        url = normalize_target(target)
+        report = asyncio.run(readiness_for(url, timeout=timeout, stability=stability))
+        text = render_markdown(report, target=url)
+        print(text)
+        if md_path:
+            Path(md_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(md_path).write_text(text, encoding="utf-8")
+        if json_path:
+            Path(json_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(json_path).write_text(json.dumps(dataclasses.asdict(report), indent=2, default=str),
+                                       encoding="utf-8")
+        return EXIT_OK
+    except Exception as exc:
+        logger.error("Readiness failed: %s (exit %d).", exc or exc.__class__.__name__, EXIT_SCAN_ERROR)
+        return EXIT_SCAN_ERROR
+
+
+def _read_html(target: str) -> str:
+    """Read a page's HTML from a local file or a static HTTP(S) GET."""
+    from urllib.parse import unquote, urlparse
+
+    if target.startswith("file://"):
+        return Path(unquote(urlparse(target).path)).read_text(encoding="utf-8", errors="replace")
+    if "://" in target:
+        import urllib.request
+
+        req = urllib.request.Request(target, headers={"User-Agent": "verity-webmcp"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    return Path(target).read_text(encoding="utf-8", errors="replace")
+
+
+def run_webmcp_cli(target: str, *, generate: bool = False, json_path: Optional[str] = None,
+                   strict: bool = False) -> int:
+    """
+    A16.1′/A16.2′ — check a page's WebMCP readiness and, with --generate, emit a
+    verified tool declaration for each uncovered form.
+    """
+    import json as _json
+
+    from verity.webmcp import (
+        check_readiness,
+        extract_page_from_html,
+        generate_tool_for_form,
+        verify_tool_against_form,
+    )
+
+    try:
+        url = normalize_target(target)
+        page = extract_page_from_html(_read_html(url), url)
+        report = check_readiness(page)
+
+        print("\n" + "=" * 60)
+        print(" VERITY WEBMCP READINESS")
+        print("=" * 60)
+        print(f" Target : {url}")
+        print(f" Tools  : {report.tool_count}   Forms: {report.form_count}   Score: {report.score}/100")
+        for issue in report.issues:
+            print(f"  [{issue.level.upper()}] {issue.code}: {issue.message}")
+
+        generated = []
+        if generate and report.uncovered:
+            print("-" * 60)
+            print(" GENERATED TOOL DECLARATIONS (for uncovered forms):")
+            by_selector = {f.selector: f for f in page.forms}
+            for selector in report.uncovered:
+                form = by_selector[selector]
+                tool = generate_tool_for_form(form)
+                verification = verify_tool_against_form(tool, form)
+                mark = "verified: agent can submit the form" if verification.ok else \
+                       "NOT verified: " + "; ".join(verification.reasons)
+                print(f"\n  # {selector}  ({mark})")
+                print("  " + _json.dumps({"name": tool.name, "description": tool.description,
+                                          "inputSchema": tool.input_schema,
+                                          "form": tool.form_selector}, indent=2).replace("\n", "\n  "))
+                generated.append({"form": selector, "tool": {
+                    "name": tool.name, "description": tool.description,
+                    "inputSchema": tool.input_schema, "form": tool.form_selector},
+                    "verified": verification.ok, "reasons": verification.reasons})
+        print("=" * 60 + "\n")
+
+        if json_path:
+            out = {"url": url, "score": report.score, "tool_count": report.tool_count,
+                   "form_count": report.form_count, "covered": report.covered,
+                   "uncovered": report.uncovered, "invalid_schemas": report.invalid_schemas,
+                   "issues": [vars(i) for i in report.issues], "generated": generated}
+            Path(json_path).write_text(_json.dumps(out, indent=2), encoding="utf-8")
+            logger.info("WebMCP report written to %s", json_path)
+
+        errors = [i for i in report.issues if i.level == "error"]
+        if strict and errors:
+            return EXIT_GATING_FINDINGS
+        return EXIT_OK
+
+    except Exception as exc:
+        logger.error("WebMCP check failed: %s (exit %d).", exc or exc.__class__.__name__, EXIT_SCAN_ERROR)
         return EXIT_SCAN_ERROR
 
 
@@ -340,10 +601,98 @@ def main() -> None:
         metavar="PATH",
         help="Fail only on findings absent from this baseline (see --write-baseline)",
     )
+    # B13.3 — verity-trace.json: per-stage timing, coverage, what was not checked.
+    scan_parser.add_argument(
+        "--trace",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Write verity-trace.json (stage timings and exactly what was not checked)",
+    )
+    scan_parser.add_argument("--earl", type=str, default=None, metavar="PATH",
+                             help="Write an EARL 1.0 JSON-LD report (ACT implementation-report format)")
+
+    # 'agent-check' command (A14.1′/A14.2′) — does an AI agent complete a task?
+    ac = subparsers.add_parser(
+        "agent-check",
+        help="Have an AI agent attempt a task on a URL through the a11y tree; localise failures",
+    )
+    ac.add_argument("url", type=str, help="Target URL or local HTML file")
+    ac.add_argument("--task", type=str, required=True,
+                    help='What the agent should do, e.g. "Add the first product to the cart"')
+    ac.add_argument("--success", type=str, default=None,
+                    help="A deterministic success spec (YAML/JSON) checked after the run; "
+                         "without it, success is the agent's own verdict")
+    ac.add_argument("--model", type=str, default="ollama:llama3.1", metavar="SPEC",
+                    help="Provider spec, e.g. anthropic:claude-sonnet-5-5 or ollama:llama3.1 (default)")
+    ac.add_argument("--json", type=str, default=None, metavar="PATH", help="Write the JSON report")
+    ac.add_argument("--sarif", type=str, default=None, metavar="PATH",
+                    help="Write SARIF for GitHub code scanning / the Verity Action")
+    ac.add_argument("--html", type=str, default=None, metavar="PATH",
+                    help="Write an HTML trace replaying every step with the tree the agent saw")
+    ac.add_argument("-c", "--config", type=str, default=None, metavar="PATH",
+                    help="Config file with a `ci: { fail_on, annotate_on }` block")
+    ac.add_argument("--headed", action="store_true", help="Show the browser (debugging)")
+    ac.add_argument("--confirm", action="store_true",
+                    help="Confirm a localised failure with Verity's deterministic checks on the live page "
+                         "(B14.1′); a confirmed failure is authoritative and can gate")
+
+    # 'acr' command (B16.1/B16.2) — VPAT 2.5 ACR from saved scan reports.
+    acr = subparsers.add_parser("acr", help="Build an Accessibility Conformance Report (VPAT 2.5, WCAG 2.2)")
+    acr.add_argument("reports", nargs="+", help="AuditReport JSON files from `verity scan -o`")
+    acr.add_argument("--product", required=True)
+    acr.add_argument("--manual", default=None, metavar="YAML", help="Human evaluation results per criterion")
+    acr.add_argument("--aaa", action="store_true", help="Include Level AAA rows")
+    acr.add_argument("--out", default=None, metavar="PATH", help="Markdown output")
+    acr.add_argument("--html", default=None, metavar="PATH", help="HTML output")
+
+    # 'readiness' command (B14.2′) — agent-readiness score with evidence.
+    rd = subparsers.add_parser("readiness", help="Score how ready a page is for AI agents, with evidence")
+    rd.add_argument("target", type=str, help="Target URL or local HTML file")
+    rd.add_argument("--stability", action="store_true", help="Render twice and compare controls (slower)")
+    rd.add_argument("-t", "--timeout", type=float, default=DEFAULT_TIMEOUT_S)
+    rd.add_argument("--json", type=str, default=None, metavar="PATH")
+    rd.add_argument("--md", type=str, default=None, metavar="PATH")
+
+    # 'mcp' command (A15.1′) — expose Verity's checks as MCP tools over stdio.
+    subparsers.add_parser(
+        "mcp",
+        help="Run the Verity MCP server (stdio) so a coding agent can scan/confirm fixes",
+    )
+
+    # 'webmcp' command (A16.1′/A16.2′) — WebMCP readiness + declaration generator.
+    wm = subparsers.add_parser(
+        "webmcp",
+        help="Check a page's WebMCP readiness and generate tool declarations for its forms",
+    )
+    wm.add_argument("target", type=str, help="Target URL or local HTML file")
+    wm.add_argument("--generate", action="store_true",
+                    help="Generate a verified WebMCP tool declaration for each uncovered form")
+    wm.add_argument("--json", type=str, default=None, metavar="PATH", help="Write the JSON report")
+    wm.add_argument("--strict", action="store_true", help="Exit non-zero if any error-level issue")
 
     args = parser.parse_args()
 
-    if args.command == "scan":
+    if args.command == "acr":
+        sys.exit(run_acr_cli(args.reports, product=args.product, manual=args.manual, aaa=args.aaa,
+                             out=args.out, html_out=args.html))
+    if args.command == "readiness":
+        sys.exit(run_readiness_cli(args.target, timeout=args.timeout, stability=args.stability,
+                                   json_path=args.json, md_path=args.md))
+    if args.command == "webmcp":
+        sys.exit(run_webmcp_cli(args.target, generate=args.generate,
+                                json_path=args.json, strict=args.strict))
+    elif args.command == "mcp":
+        from verity.mcp.server import main as mcp_main
+
+        sys.exit(mcp_main())
+    elif args.command == "agent-check":
+        sys.exit(run_agent_check_cli(
+            url=args.url, task=args.task, success=args.success, model_spec=args.model,
+            json_path=args.json, sarif_path=args.sarif, html_path=args.html,
+            config_path=args.config, headless=not args.headed, confirm=args.confirm,
+        ))
+    elif args.command == "scan":
         worker_cmd_list = args.worker_cmd.split() if args.worker_cmd else None
         exit_code = asyncio.run(
             run_cli_scan(
@@ -356,6 +705,8 @@ def main() -> None:
                 config_path=args.config,
                 write_baseline_path=args.write_baseline,
                 baseline_path=args.baseline,
+                trace_path=args.trace,
+                earl_path=args.earl,
             )
         )
         sys.exit(exit_code)

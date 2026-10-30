@@ -32,3 +32,6 @@ eval/vision/results.json
 
 # Benchmark tools and generated pages (eval/benchmark/benchmark.py)
 eval/benchmark/work/
+
+# Vendored upstream benchmark apps (pinned separately; not committed as a 483-file dump)
+eval/agentbench/vendor/
