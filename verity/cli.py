@@ -455,9 +455,19 @@ def main() -> None:
                     help="Config file with a `ci: { fail_on, annotate_on }` block")
     ac.add_argument("--headed", action="store_true", help="Show the browser (debugging)")
 
+    # 'mcp' command (A15.1′) — expose Verity's checks as MCP tools over stdio.
+    subparsers.add_parser(
+        "mcp",
+        help="Run the Verity MCP server (stdio) so a coding agent can scan/confirm fixes",
+    )
+
     args = parser.parse_args()
 
-    if args.command == "agent-check":
+    if args.command == "mcp":
+        from verity.mcp.server import main as mcp_main
+
+        sys.exit(mcp_main())
+    elif args.command == "agent-check":
         sys.exit(run_agent_check_cli(
             url=args.url, task=args.task, success=args.success, model_spec=args.model,
             json_path=args.json, sarif_path=args.sarif, html_path=args.html,
