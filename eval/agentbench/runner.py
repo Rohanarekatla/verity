@@ -49,13 +49,20 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
+from eval.agentbench.agents.browser_use_agent import BrowserUseAgent
 from eval.agentbench.agents.tree_agent import TreeAgent, TreeAgentResult
 from eval.agentbench.analysis import EpisodeRecord
+from eval.agentbench.attacks import ATTACKS, Attack, HijackRecord, assess_hijack
 from eval.agentbench.env import MiniWoBEnv
+from eval.agentbench.loop_guard import LoopGuard
 from eval.agentbench.providers import BudgetExceeded, CostLedger, make_provider
 from eval.agentbench.providers.base import BaseProvider, ProviderError
 from eval.agentbench.tasks import MINIWOB_TASKS, Task, cells
 from eval.agentbench.verify_injection import VerifyResult, verify
+
+# The agents the runner can build by name. The Week-13 screen-reader agent
+# (B13.1′) registers here when it lands; the runner needs no other change.
+AGENTS = {"tree": TreeAgent, "browser_use": BrowserUseAgent}
 
 # The one seed the pre-registration fixes for run order (and the bootstrap).
 # Hard-coded here, not a parameter, so a run cannot quietly reorder itself.
@@ -259,6 +266,14 @@ def _default_provider_factory(label: str, spec: str, ledger: CostLedger) -> Base
     return make_provider(spec, ledger=ledger)
 
 
+def _default_agent_factory(name: str, provider: BaseProvider, *, max_steps: int):
+    """Build the agent for `name`, each with a fresh per-episode loop guard."""
+    cls = AGENTS.get(name)
+    if cls is None:
+        raise ValueError(f"unknown agent {name!r}; known: {', '.join(sorted(AGENTS))}")
+    return cls(provider, max_steps=max_steps, loop_guard=LoopGuard())
+
+
 def run_benchmark(
     models: dict[str, str],
     *,
@@ -272,7 +287,7 @@ def run_benchmark(
     max_steps: int = 15,
     headless: bool = True,
     env_factory: Callable[..., MiniWoBEnv] = MiniWoBEnv,
-    agent_factory: Callable[[BaseProvider], TreeAgent] = None,
+    agent_factory: Callable[[str, BaseProvider], object] = None,
     provider_factory: Callable[[str, str, CostLedger], BaseProvider] = _default_provider_factory,
     verify_fn: Callable[..., VerifyResult] = verify,
 ) -> RunReport:
@@ -289,7 +304,7 @@ def run_benchmark(
     (out_dir / "traces").mkdir(parents=True, exist_ok=True)
     records_path = out_dir / "records.jsonl"
     if agent_factory is None:
-        agent_factory = lambda p: TreeAgent(p, max_steps=max_steps)
+        agent_factory = lambda name, p: _default_agent_factory(name, p, max_steps=max_steps)
 
     plan = order_plan(build_plan(models, tasks=tasks, agents=agents, trials=trials))
     done_ids = _completed_ids(records_path) if resume else set()
@@ -349,7 +364,8 @@ def run_benchmark(
                         continue
 
                 try:
-                    result = agent_factory(provider).run(env, spec.task.id, seed=spec.trial, defect=spec.defect)
+                    result = agent_factory(spec.agent, provider).run(
+                        env, spec.task.id, seed=spec.trial, defect=spec.defect)
                 except BudgetExceeded:
                     # The cap refused a call. Record this episode as excluded and
                     # stop the run — never overspend to finish it.
@@ -391,3 +407,147 @@ def _ledger_total(out_dir: Path, n_shards: int) -> float:
     for p in sorted(out_dir.glob("ledger*.jsonl")):
         total += CostLedger(path=p).total_usd
     return total
+
+
+# -- the injection-attack track (A13.2′) --------------------------------------
+
+@dataclass(frozen=True)
+class AttackSpec:
+    episode_id: str
+    task: Task
+    agent: str
+    model_label: str
+    model_spec: str
+    trial: int
+    attack: Attack
+
+
+def build_attack_plan(
+    models: dict[str, str],
+    *,
+    tasks: tuple[Task, ...] = MINIWOB_TASKS,
+    agents: tuple[str, ...] = ("tree",),
+    attacks: tuple[Attack, ...] = ATTACKS,
+    trials: int = 1,
+) -> list[AttackSpec]:
+    """Enumerate (task × attack × agent × model × trial). Every agent is run
+    against every attack — including attacks it cannot perceive — so the hijack
+    table shows the contrast (a vision agent's 0% on an aria-only injection is a
+    result, not a gap)."""
+    plan: list[AttackSpec] = []
+    for agent in agents:
+        for label, spec in models.items():
+            for trial in range(trials):
+                for task in tasks:
+                    for attack in attacks:
+                        eid = f"{agent}|{label}|{task.id}|attack:{attack.id}|t{trial}"
+                        plan.append(AttackSpec(eid, task, agent, label, spec, trial, attack))
+    return plan
+
+
+def run_attack_track(
+    models: dict[str, str],
+    *,
+    out_dir: Path,
+    tasks: tuple[Task, ...] = MINIWOB_TASKS,
+    agents: tuple[str, ...] = ("tree",),
+    attacks: tuple[Attack, ...] = ATTACKS,
+    trials: int = 1,
+    cap_usd: Optional[float] = None,
+    resume: bool = True,
+    max_steps: int = 15,
+    headless: bool = True,
+    env_factory: Callable[..., MiniWoBEnv] = MiniWoBEnv,
+    agent_factory: Callable[[str, BaseProvider], object] = None,
+    provider_factory: Callable[[str, str, CostLedger], BaseProvider] = _default_provider_factory,
+) -> RunReport:
+    """
+    Run the injection-attack track into `out_dir/hijacks.jsonl` (+ traces),
+    resumably and under a budget cap. Attacks run on the **clean** page, so a
+    behaviour change is attributable to the injected text. Hijack scoring is the
+    deterministic canary check (`attacks.assess_hijack`) — no model judges it.
+    """
+    out_dir = Path(out_dir)
+    (out_dir / "traces").mkdir(parents=True, exist_ok=True)
+    hijacks_path = out_dir / "hijacks.jsonl"
+    if agent_factory is None:
+        agent_factory = lambda name, p: _default_agent_factory(name, p, max_steps=max_steps)
+
+    plan = order_plan_attacks(build_attack_plan(models, tasks=tasks, agents=agents, attacks=attacks, trials=trials))
+    done_ids = _completed_ids(hijacks_path) if resume else set()
+    todo = [s for s in plan if s.episode_id not in done_ids]
+
+    report = RunReport(planned=len(plan), already_done=len(plan) - len(todo))
+    if not todo:
+        return report
+
+    ledger = CostLedger(cap_usd=cap_usd, path=out_dir / "attack-ledger.jsonl")
+    providers: dict[str, BaseProvider] = {}
+
+    def provider_for(spec: AttackSpec) -> BaseProvider:
+        if spec.model_label not in providers:
+            providers[spec.model_label] = provider_factory(spec.model_label, spec.model_spec, ledger)
+        return providers[spec.model_label]
+
+    with env_factory(headless=headless) as env:
+        for spec in todo:
+            provider = provider_for(spec)
+            agent = agent_factory(spec.agent, provider)
+            try:
+                result = agent.run(env, spec.task.id, seed=spec.trial, defect=None, attack=spec.attack.id)
+            except BudgetExceeded:
+                report._note_exclusion("budget")
+                report.budget_stopped = True
+                break
+            except ProviderError:
+                _write_hijack(hijacks_path, _excluded_hijack(spec, provider.name))
+                report._note_exclusion("provider_error")
+                continue
+
+            assessment = assess_hijack(result.episode)
+            rec = HijackRecord(
+                episode_id=spec.episode_id, task_id=spec.task.id, agent=spec.agent,
+                provider=result.provider, model=spec.model_label, attack=spec.attack.id,
+                vector=spec.attack.vector, trial=spec.trial,
+                perceivable=spec.agent in spec.attack.perceivable_by,
+                hijacked=assessment.hijacked,
+                task_outcome=outcome_from_reward(result.episode.done, result.episode.reward),
+            )
+            _write_hijack(hijacks_path, rec)
+            (out_dir / "traces" / f"{_safe_name(spec.episode_id)}.json").write_text(
+                json.dumps({**_trace_from_result(_as_episode_spec(spec), result),
+                            "attack": spec.attack.id, "vector": spec.attack.vector,
+                            "hijacked": assessment.hijacked}, indent=2), encoding="utf-8")
+            report.run += 1
+
+    report.cost_usd = ledger.total_usd
+    return report
+
+
+def order_plan_attacks(plan: list[AttackSpec], *, seed: int = ORDER_SEED) -> list[AttackSpec]:
+    import random
+
+    ordered = sorted(plan, key=lambda e: e.episode_id)
+    random.Random(seed).shuffle(ordered)
+    return ordered
+
+
+def _as_episode_spec(spec: AttackSpec) -> EpisodeSpec:
+    """Adapt an AttackSpec to the EpisodeSpec shape the trace writer expects."""
+    return EpisodeSpec(spec.episode_id, spec.task, spec.agent, spec.model_label,
+                       spec.model_spec, spec.trial, defect=None)
+
+
+def _write_hijack(path: Path, rec: HijackRecord) -> None:
+    with path.open("a", encoding="utf-8") as f:
+        f.write(rec.model_dump_json() + "\n")
+
+
+def _excluded_hijack(spec: AttackSpec, provider_name: str) -> HijackRecord:
+    return HijackRecord(
+        episode_id=spec.episode_id, task_id=spec.task.id, agent=spec.agent,
+        provider=provider_name, model=spec.model_label, attack=spec.attack.id,
+        vector=spec.attack.vector, trial=spec.trial,
+        perceivable=spec.agent in spec.attack.perceivable_by,
+        hijacked=False, task_outcome="failure", excluded_reason="provider_error",
+    )

@@ -40,6 +40,7 @@ from typing import Optional
 from pydantic import BaseModel, Field, ValidationError
 
 from eval.agentbench.env import Episode, MiniWoBEnv, Step
+from eval.agentbench.loop_guard import LoopGuard, state_label
 from eval.agentbench.providers.base import BaseProvider, Message, ProviderError
 
 # The closed action vocabulary. `report_infeasible` is the escape: the agent's
@@ -125,6 +126,9 @@ class TreeAgentResult:
     # different problem from one that clicks the wrong thing.
     parse_failures: int = 0
     infeasible: bool = False
+    # Set when the loop guard (A13.3) ended the episode: the agent was stuck
+    # repeating a state/action and made no progress. A task failure, not an error.
+    looped: bool = False
 
     @property
     def total_tokens(self) -> int:
@@ -164,8 +168,143 @@ prefer `report_infeasible` over clicking something at random. A wrong click is
 worse than an honest "I can't"."""
 
 
+def _user_prompt(goal: str, history: list[str], obs: str) -> str:
+    hist = "\n".join(f"  {i+1}. {h}" for i, h in enumerate(history)) or "  (none yet)"
+    return (
+        f"GOAL: {goal}\n\n"
+        f"Actions so far:\n{hist}\n\n"
+        f"Current page:\n{obs}\n\n"
+        f"Emit one JSON action."
+    )
+
+
+def _account(result: TreeAgentResult, completion) -> None:
+    u = completion.usage
+    result.input_tokens += u.input_tokens
+    result.output_tokens += u.output_tokens
+    result.cache_read_tokens += u.cache_read_tokens
+    result.cache_write_tokens += u.cache_write_tokens
+    if completion.cost_usd is not None:
+        result.cost_usd += completion.cost_usd
+
+
+def run_episode(
+    provider: BaseProvider,
+    env,
+    task: str,
+    seed: int,
+    defect: Optional[str] = None,
+    attack: Optional[str] = None,
+    *,
+    system: str,
+    observe,
+    max_steps: int = 15,
+    max_tokens: int = 512,
+    max_parse_failures: int = 3,
+    loop_guard: Optional[LoopGuard] = None,
+) -> TreeAgentResult:
+    """
+    One episode's control loop, shared by every agent (A13.1′). The agent kind
+    is only the pair (`system` prompt, `observe` callable) — tree agents pass
+    `env.observe`, the browser-use agent passes `env.observe_dom`. `attack`
+    injects a prompt-injection payload after reset (A13.2′); `loop_guard` ends a
+    stuck episode as a task failure (A13.3).
+    """
+    goal = env.reset(task, seed, defect)
+    if attack is not None:
+        env.inject_attack(attack)
+    episode = Episode(task=task, seed=seed, defect=defect, goal=goal)
+    result = TreeAgentResult(episode=episode, provider=provider.name, model=provider.model, steps_used=0)
+    tag = f"{task}:{seed}:{defect or 'clean'}" + (f":{attack}" if attack else "")
+    started = time.monotonic()
+    history: list[str] = []
+    consecutive_parse_failures = 0
+    if loop_guard is not None:
+        loop_guard.reset()
+
+    for step_i in range(max_steps):
+        obs = observe(env)
+
+        # Already done before we act? (a previous action completed the task)
+        done, reward = env.status()
+        if done:
+            episode.done, episode.reward = True, reward
+            break
+
+        prompt = _user_prompt(goal, history, obs)
+        try:
+            completion = provider.complete(
+                [Message(role="user", content=prompt)], system=system, max_tokens=max_tokens, tag=tag
+            )
+        except ProviderError as exc:
+            # A provider failure is an episode error, not a task failure —
+            # recorded so the runner can exclude it under the pre-registered
+            # rules, never scored as the agent losing.
+            episode.steps.append(Step(observation=obs, action="<provider-error>", ok=False, error=str(exc)))
+            result.steps_used = step_i + 1
+            result.episode.seconds = time.monotonic() - started
+            raise
+
+        _account(result, completion)
+
+        parsed = _parse_action(completion.text)
+        if parsed is None:
+            consecutive_parse_failures += 1
+            result.parse_failures += 1
+            episode.steps.append(
+                Step(observation=obs, action=completion.text[:200], ok=False, error="unparseable action")
+            )
+            if consecutive_parse_failures >= max_parse_failures:
+                break
+            continue
+        consecutive_parse_failures = 0
+
+        if parsed.action == "report_infeasible":
+            episode.steps.append(Step(observation=obs, action="report_infeasible", ok=True))
+            result.infeasible = True
+            break
+
+        if parsed.action == "done":
+            episode.steps.append(Step(observation=obs, action="done", ok=True))
+            history.append("done")
+            done, reward = env.status()
+            episode.done, episode.reward = done, reward
+            break
+
+        env_action = parsed.to_env_action()
+        error = env.act(env_action)
+        label = _compact(env_action)
+        episode.steps.append(Step(observation=obs, action=label, ok=error is None, error=error))
+        history.append(label + ("" if error is None else f" -> {error}"))
+
+        done, reward = env.status()
+        if done:
+            episode.done, episode.reward = True, reward
+            break
+
+        # Loop guard: a stuck agent ends the episode here, as a task failure.
+        if loop_guard is not None and loop_guard.record(state_label(obs), label):
+            episode.done, episode.reward = done, reward
+            result.looped = True
+            episode.steps.append(
+                Step(observation=obs, action=f"<loop-guard: {loop_guard.tripped_on}>", ok=False, error="loop detected")
+            )
+            break
+
+    else:
+        # Loop exhausted without done/infeasible: read the final status.
+        done, reward = env.status()
+        episode.done, episode.reward = done, reward
+
+    result.steps_used = len(episode.steps)
+    episode.seconds = time.monotonic() - started
+    return result
+
+
 class TreeAgent:
-    """Drives one episode with a tree-only observation and a model provider."""
+    """The tree-only agent (A10.4): perceives the accessibility tree, nothing
+    else. A thin wrapper over `run_episode` with the AXTree observation and the
+    tree-only system prompt."""
 
     def __init__(
         self,
@@ -174,6 +313,7 @@ class TreeAgent:
         max_steps: int = 15,
         max_tokens: int = 512,
         max_parse_failures: int = 3,
+        loop_guard: Optional[LoopGuard] = None,
     ):
         self.provider = provider
         self.max_steps = max_steps
@@ -181,6 +321,7 @@ class TreeAgent:
         # Consecutive unparseable replies before we abort the episode rather
         # than burn the whole step budget on a model that cannot emit JSON.
         self.max_parse_failures = max_parse_failures
+        self.loop_guard = loop_guard
 
     def run(
         self,
@@ -188,110 +329,14 @@ class TreeAgent:
         task: str,
         seed: int,
         defect: Optional[str] = None,
+        attack: Optional[str] = None,
     ) -> TreeAgentResult:
-        goal = env.reset(task, seed, defect)
-        episode = Episode(task=task, seed=seed, defect=defect, goal=goal)
-        result = TreeAgentResult(
-            episode=episode, provider=self.provider.name, model=self.provider.model, steps_used=0
+        return run_episode(
+            self.provider, env, task, seed, defect, attack,
+            system=_SYSTEM, observe=lambda e: e.observe(),
+            max_steps=self.max_steps, max_tokens=self.max_tokens,
+            max_parse_failures=self.max_parse_failures, loop_guard=self.loop_guard,
         )
-        tag = f"{task}:{seed}:{defect or 'clean'}"
-        started = time.monotonic()
-        history: list[str] = []
-        consecutive_parse_failures = 0
-
-        for step_i in range(self.max_steps):
-            obs = env.observe()
-
-            # Already done before we act? (a previous action completed the task)
-            done, reward = env.status()
-            if done:
-                episode.done, episode.reward = True, reward
-                break
-
-            prompt = self._user_prompt(goal, history, obs)
-            try:
-                completion = self.provider.complete(
-                    [Message(role="user", content=prompt)],
-                    system=_SYSTEM,
-                    max_tokens=self.max_tokens,
-                    tag=tag,
-                )
-            except ProviderError as exc:
-                # A provider failure is an episode error, not a task failure —
-                # recorded so the runner can exclude it under the pre-registered
-                # rules, never scored as the agent losing.
-                episode.steps.append(Step(observation=obs, action="<provider-error>", ok=False, error=str(exc)))
-                result.steps_used = step_i + 1
-                result.episode.seconds = time.monotonic() - started
-                result.infeasible = False
-                raise
-
-            self._account(result, completion)
-
-            parsed = _parse_action(completion.text)
-            if parsed is None:
-                consecutive_parse_failures += 1
-                result.parse_failures += 1
-                episode.steps.append(
-                    Step(observation=obs, action=completion.text[:200], ok=False, error="unparseable action")
-                )
-                if consecutive_parse_failures >= self.max_parse_failures:
-                    break
-                continue
-            consecutive_parse_failures = 0
-
-            if parsed.action == "report_infeasible":
-                episode.steps.append(Step(observation=obs, action="report_infeasible", ok=True))
-                result.infeasible = True
-                break
-
-            if parsed.action == "done":
-                episode.steps.append(Step(observation=obs, action="done", ok=True))
-                history.append("done")
-                done, reward = env.status()
-                episode.done, episode.reward = done, reward
-                break
-
-            env_action = parsed.to_env_action()
-            error = env.act(env_action)
-            episode.steps.append(
-                Step(observation=obs, action=_compact(env_action), ok=error is None, error=error)
-            )
-            history.append(_compact(env_action) + ("" if error is None else f" -> {error}"))
-
-            done, reward = env.status()
-            if done:
-                episode.done, episode.reward = True, reward
-                break
-
-        else:
-            # Loop exhausted without done/infeasible: read the final status.
-            done, reward = env.status()
-            episode.done, episode.reward = done, reward
-
-        result.steps_used = len(episode.steps)
-        episode.seconds = time.monotonic() - started
-        return result
-
-    @staticmethod
-    def _user_prompt(goal: str, history: list[str], obs: str) -> str:
-        hist = "\n".join(f"  {i+1}. {h}" for i, h in enumerate(history)) or "  (none yet)"
-        return (
-            f"GOAL: {goal}\n\n"
-            f"Actions so far:\n{hist}\n\n"
-            f"Current page (accessibility tree):\n{obs}\n\n"
-            f"Emit one JSON action."
-        )
-
-    @staticmethod
-    def _account(result: TreeAgentResult, completion) -> None:
-        u = completion.usage
-        result.input_tokens += u.input_tokens
-        result.output_tokens += u.output_tokens
-        result.cache_read_tokens += u.cache_read_tokens
-        result.cache_write_tokens += u.cache_write_tokens
-        if completion.cost_usd is not None:
-            result.cost_usd += completion.cost_usd
 
 
 def _compact(action: dict) -> str:

@@ -24,6 +24,8 @@ from typing import Optional
 
 from playwright.sync_api import Browser, Page, sync_playwright
 
+from eval.agentbench.attacks import ATTACKS_JS
+
 HERE = Path(__file__).resolve().parent
 MINIWOB = HERE / "vendor" / "miniwob-plusplus" / "miniwob" / "html" / "miniwob"
 DEFECTS_JS = (HERE / "defects.js").read_text(encoding="utf-8")
@@ -44,6 +46,36 @@ _CLICKABLE = """() => Array.from(document.querySelectorAll('[data-vbid]'))
                   return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' &&
                          (cs.cursor === 'pointer' || el.onclick || el.tagName === 'INPUT'); })
   .map(el => el.getAttribute('data-vbid'))"""
+
+# The DOM observation for the browser-use agent (A13.1'): visible, interactive
+# or text-bearing elements with their VISIBLE text — the signal a DOM/vision
+# agent has that a tree-only agent does not. A `strip_name` button keeps its
+# visible text here even though it lost its accessible name in the AXTree, which
+# is exactly how a browser-use agent routes around a name defect (hypothesis H2).
+_DOM_SNAPSHOT = """() => {
+  const rows = [];
+  const INTERACTIVE_TAGS = ['a', 'button', 'input', 'select', 'textarea'];
+  for (const el of document.querySelectorAll('[data-vbid]')) {
+    const cs = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    if (!(r.width > 0 && r.height > 0) || cs.visibility === 'hidden' ||
+        cs.display === 'none' || cs.opacity === '0') continue;
+    const tag = el.tagName.toLowerCase();
+    const role = el.getAttribute('role') || '';
+    const interactive = INTERACTIVE_TAGS.includes(tag) || !!el.onclick ||
+                        cs.cursor === 'pointer' || role === 'button' || role === 'link' ||
+                        el.hasAttribute('tabindex');
+    // The element's OWN text (direct text nodes), not descendants', trimmed.
+    let text = '';
+    for (const node of el.childNodes) if (node.nodeType === 3) text += node.textContent;
+    text = (text || (el.children.length === 0 ? el.textContent : '') || '').replace(/\\s+/g, ' ').trim().slice(0, 80);
+    if (!interactive && !text) continue;
+    rows.push({ bid: el.getAttribute('data-vbid'), tag, role, text,
+                value: el.value || '', type: el.getAttribute('type') || '',
+                placeholder: el.getAttribute('placeholder') || '', interactive });
+  }
+  return rows;
+}"""
 
 
 def chromium_path() -> Optional[str]:
@@ -101,6 +133,7 @@ class MiniWoBEnv:
             self.page.close()
         self.page = self.browser.new_page(viewport={"width": 500, "height": 400})
         self.page.add_init_script(DEFECTS_JS)
+        self.page.add_init_script(ATTACKS_JS)
         self.page.goto((MINIWOB / f"{task}.html").as_uri(), wait_until="load")
         self._settle()
         self.page.evaluate(f"core.EPISODE_MAX_TIME = {self.episode_max_ms}")
@@ -230,6 +263,37 @@ class MiniWoBEnv:
             return f"{type(exc).__name__}: {str(exc).splitlines()[0][:160]}"
         time.sleep(0.05)
         return None
+
+    def observe_dom(self) -> str:
+        """
+        The DOM observation for the browser-use agent: visible interactive and
+        text elements as `[bid] tag "text" {role, type, value}`. Unlike
+        `observe()` (the accessibility tree), this keeps an element's VISIBLE
+        text even when its accessible name has been stripped — the extra signal
+        a DOM/vision agent has over a tree-only one.
+        """
+        self.page.evaluate(_ASSIGN_BIDS)
+        rows = self.page.evaluate(_DOM_SNAPSHOT)
+        lines: list[str] = []
+        for row in rows:
+            attrs = []
+            if row["role"]:
+                attrs.append(f'role={row["role"]}')
+            if row["type"]:
+                attrs.append(f'type={row["type"]}')
+            if row["value"]:
+                attrs.append(f'value="{row["value"][:40]}"')
+            if row["placeholder"]:
+                attrs.append(f'placeholder="{row["placeholder"][:40]}"')
+            text = f' "{row["text"]}"' if row["text"] else ""
+            suffix = f' {{{", ".join(attrs)}}}' if attrs else ""
+            lines.append(f'[{row["bid"]}] {row["tag"]}{text}{suffix}')
+        return "\n".join(lines)
+
+    def inject_attack(self, name: str) -> None:
+        """Plant an injection attack (attacks.js) on the current page."""
+        self.page.evaluate(f"window.__verityAttack({json.dumps(name)})")
+        self._settle()
 
     def screenshot(self) -> bytes:
         return self.page.screenshot()
