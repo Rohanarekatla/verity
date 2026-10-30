@@ -53,16 +53,19 @@ from eval.agentbench.agents.browser_use_agent import BrowserUseAgent
 from eval.agentbench.agents.tree_agent import TreeAgent, TreeAgentResult
 from eval.agentbench.analysis import EpisodeRecord
 from eval.agentbench.attacks import ATTACKS, Attack, HijackRecord, assess_hijack
+from eval.agentbench.agents.screen_reader_agent import ScreenReaderAgent
 from eval.agentbench.env import MiniWoBEnv
+from eval.agentbench.hardening import HARDENED_AGENTS, base_agent
 from eval.agentbench.loop_guard import LoopGuard
 from eval.agentbench.providers import BudgetExceeded, CostLedger, make_provider
 from eval.agentbench.providers.base import BaseProvider, ProviderError
 from eval.agentbench.tasks import MINIWOB_TASKS, Task, cells
 from eval.agentbench.verify_injection import VerifyResult, verify
 
-# The agents the runner can build by name. The Week-13 screen-reader agent
-# (B13.1′) registers here when it lands; the runner needs no other change.
-AGENTS = {"tree": TreeAgent, "browser_use": BrowserUseAgent}
+# The agents the runner can build by name: the three subjects, plus each one
+# hardened against prompt injection (B13.2′, measured on the attack track).
+AGENTS = {"tree": TreeAgent, "browser_use": BrowserUseAgent, "screen_reader": ScreenReaderAgent,
+          **HARDENED_AGENTS}
 
 # The one seed the pre-registration fixes for run order (and the bootstrap).
 # Hard-coded here, not a parameter, so a run cannot quietly reorder itself.
@@ -509,8 +512,8 @@ def run_attack_track(
                 episode_id=spec.episode_id, task_id=spec.task.id, agent=spec.agent,
                 provider=result.provider, model=spec.model_label, attack=spec.attack.id,
                 vector=spec.attack.vector, trial=spec.trial,
-                perceivable=spec.agent in spec.attack.perceivable_by,
-                hijacked=assessment.hijacked,
+                perceivable=base_agent(spec.agent) in spec.attack.perceivable_by,
+                hijacked=assessment.hijacked, attempted=assessment.attempted,
                 task_outcome=outcome_from_reward(result.episode.done, result.episode.reward),
             )
             _write_hijack(hijacks_path, rec)
@@ -548,6 +551,6 @@ def _excluded_hijack(spec: AttackSpec, provider_name: str) -> HijackRecord:
         episode_id=spec.episode_id, task_id=spec.task.id, agent=spec.agent,
         provider=provider_name, model=spec.model_label, attack=spec.attack.id,
         vector=spec.attack.vector, trial=spec.trial,
-        perceivable=spec.agent in spec.attack.perceivable_by,
+        perceivable=base_agent(spec.agent) in spec.attack.perceivable_by,
         hijacked=False, task_outcome="failure", excluded_reason="provider_error",
     )
