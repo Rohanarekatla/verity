@@ -360,6 +360,88 @@ def run_agent_check_cli(
         return EXIT_SCAN_ERROR
 
 
+def _read_html(target: str) -> str:
+    """Read a page's HTML from a local file or a static HTTP(S) GET."""
+    from urllib.parse import unquote, urlparse
+
+    if target.startswith("file://"):
+        return Path(unquote(urlparse(target).path)).read_text(encoding="utf-8", errors="replace")
+    if "://" in target:
+        import urllib.request
+
+        req = urllib.request.Request(target, headers={"User-Agent": "verity-webmcp"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    return Path(target).read_text(encoding="utf-8", errors="replace")
+
+
+def run_webmcp_cli(target: str, *, generate: bool = False, json_path: Optional[str] = None,
+                   strict: bool = False) -> int:
+    """
+    A16.1′/A16.2′ — check a page's WebMCP readiness and, with --generate, emit a
+    verified tool declaration for each uncovered form.
+    """
+    import json as _json
+
+    from verity.webmcp import (
+        check_readiness,
+        extract_page_from_html,
+        generate_tool_for_form,
+        verify_tool_against_form,
+    )
+
+    try:
+        url = normalize_target(target)
+        page = extract_page_from_html(_read_html(url), url)
+        report = check_readiness(page)
+
+        print("\n" + "=" * 60)
+        print(" VERITY WEBMCP READINESS")
+        print("=" * 60)
+        print(f" Target : {url}")
+        print(f" Tools  : {report.tool_count}   Forms: {report.form_count}   Score: {report.score}/100")
+        for issue in report.issues:
+            print(f"  [{issue.level.upper()}] {issue.code}: {issue.message}")
+
+        generated = []
+        if generate and report.uncovered:
+            print("-" * 60)
+            print(" GENERATED TOOL DECLARATIONS (for uncovered forms):")
+            by_selector = {f.selector: f for f in page.forms}
+            for selector in report.uncovered:
+                form = by_selector[selector]
+                tool = generate_tool_for_form(form)
+                verification = verify_tool_against_form(tool, form)
+                mark = "verified: agent can submit the form" if verification.ok else \
+                       "NOT verified: " + "; ".join(verification.reasons)
+                print(f"\n  # {selector}  ({mark})")
+                print("  " + _json.dumps({"name": tool.name, "description": tool.description,
+                                          "inputSchema": tool.input_schema,
+                                          "form": tool.form_selector}, indent=2).replace("\n", "\n  "))
+                generated.append({"form": selector, "tool": {
+                    "name": tool.name, "description": tool.description,
+                    "inputSchema": tool.input_schema, "form": tool.form_selector},
+                    "verified": verification.ok, "reasons": verification.reasons})
+        print("=" * 60 + "\n")
+
+        if json_path:
+            out = {"url": url, "score": report.score, "tool_count": report.tool_count,
+                   "form_count": report.form_count, "covered": report.covered,
+                   "uncovered": report.uncovered, "invalid_schemas": report.invalid_schemas,
+                   "issues": [vars(i) for i in report.issues], "generated": generated}
+            Path(json_path).write_text(_json.dumps(out, indent=2), encoding="utf-8")
+            logger.info("WebMCP report written to %s", json_path)
+
+        errors = [i for i in report.issues if i.level == "error"]
+        if strict and errors:
+            return EXIT_GATING_FINDINGS
+        return EXIT_OK
+
+    except Exception as exc:
+        logger.error("WebMCP check failed: %s (exit %d).", exc or exc.__class__.__name__, EXIT_SCAN_ERROR)
+        return EXIT_SCAN_ERROR
+
+
 def main() -> None:
     """CLI Argument Parser entry point."""
     parser = argparse.ArgumentParser(
@@ -461,9 +543,23 @@ def main() -> None:
         help="Run the Verity MCP server (stdio) so a coding agent can scan/confirm fixes",
     )
 
+    # 'webmcp' command (A16.1′/A16.2′) — WebMCP readiness + declaration generator.
+    wm = subparsers.add_parser(
+        "webmcp",
+        help="Check a page's WebMCP readiness and generate tool declarations for its forms",
+    )
+    wm.add_argument("target", type=str, help="Target URL or local HTML file")
+    wm.add_argument("--generate", action="store_true",
+                    help="Generate a verified WebMCP tool declaration for each uncovered form")
+    wm.add_argument("--json", type=str, default=None, metavar="PATH", help="Write the JSON report")
+    wm.add_argument("--strict", action="store_true", help="Exit non-zero if any error-level issue")
+
     args = parser.parse_args()
 
-    if args.command == "mcp":
+    if args.command == "webmcp":
+        sys.exit(run_webmcp_cli(args.target, generate=args.generate,
+                                json_path=args.json, strict=args.strict))
+    elif args.command == "mcp":
         from verity.mcp.server import main as mcp_main
 
         sys.exit(mcp_main())
