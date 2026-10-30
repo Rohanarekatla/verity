@@ -457,31 +457,57 @@ def test_junit_notes_an_expired_waiver_rather_than_silently_reappearing():
     assert "expired on 2026-01-01" in text
 
 
-# --- keep a current sample on disk for manual verification ----------------
+# --- the committed sample SARIF -------------------------------------------
+#
+# `eval/fixtures/minimal.sarif.json` is a sample uploaded to a real repo by hand
+# to confirm GitHub renders inline annotations (the half of the Week 8 artifact
+# that needs a real PR — docs/sarif-reference.md §6). It is a COMMITTED fixture,
+# so the test suite must not rewrite it: it used to, with a machine-local
+# `file://` path baked into the target, which churned the tracked file on every
+# run and on every contributor's machine. Now the target is a fixed, machine-
+# independent string, the sample is built into a tmp dir for assertions, and a
+# guard test keeps the committed copy current. Regenerate it deliberately with
+# `python -m scripts.regen_sarif_sample` (or scripts/regen_sarif_sample.py).
 
-def test_write_a_sample_sarif_for_manual_upload():
-    """
-    Regenerates `eval/fixtures/minimal.sarif.json` so there is always a
-    current file to upload to a real repo. Confirming it renders as an inline
-    annotation is the half of the Week 8 artifact that needs a real PR —
-    see docs/sarif-reference.md §6.
-    """
-    target = (REPO_ROOT / "data" / "fixtures" / "contrast-fail.html").as_uri()
+SAMPLE_PATH = REPO_ROOT / "eval" / "fixtures" / "minimal.sarif.json"
+# Fixed and machine-independent, so the committed fixture is byte-stable
+# everywhere — never someone's absolute path.
+SAMPLE_TARGET = "file:///verity/data/fixtures/contrast-fail.html"
+
+
+def build_sample_sarif(out_path: Path) -> Path:
+    """Build the sample SARIF at `out_path`. Shared by the test (tmp dir) and the
+    regeneration script (the committed path), so the two can never diverge."""
     rep = report(
         finding(Provenance.AUTHORITATIVE, "fail", severity=Severity.CRITICAL),
         finding(Provenance.AI_ASSISTED, "fail", rule_id="image-alt", sc_id="1.1.1", selector="#logo"),
         finding(Provenance.NEEDS_REVIEW, "cantTell", selector="#over-image"),
-        target=target,
+        target=SAMPLE_TARGET,
     )
-    out = write_sarif(
-        rep,
-        REPO_ROOT / "eval" / "fixtures" / "minimal.sarif.json",
-        policy=CiPolicy(annotate_on="everything"),
-    )
+    return write_sarif(rep, out_path, policy=CiPolicy(annotate_on="everything"))
 
+
+def test_sample_sarif_demonstrates_all_three_levels(tmp_path):
+    out = build_sample_sarif(tmp_path / "minimal.sarif.json")   # tmp — never the tracked file
     doc = json.loads(out.read_text(encoding="utf-8"))
     assert doc["version"] == "2.1.0"
     levels = [r["level"] for r in doc["runs"][0]["results"]]
-    assert levels == ["error", "warning", "note"], (
-        "the sample should demonstrate all three levels"
+    assert levels == ["error", "warning", "note"], "the sample should demonstrate all three levels"
+
+
+def test_sample_sarif_generation_is_deterministic(tmp_path):
+    # If this ever fails, the committed fixture cannot be kept stable — there is
+    # nondeterminism (a timestamp, unsorted output) to remove first.
+    a = build_sample_sarif(tmp_path / "a.json").read_text(encoding="utf-8")
+    b = build_sample_sarif(tmp_path / "b.json").read_text(encoding="utf-8")
+    assert a == b
+
+
+def test_committed_sample_sarif_is_current(tmp_path):
+    # The tracked fixture must equal a fresh generation, so it never drifts and
+    # never carries a machine path. The test does NOT write the tracked file.
+    fresh = build_sample_sarif(tmp_path / "fresh.json").read_text(encoding="utf-8")
+    assert SAMPLE_PATH.read_text(encoding="utf-8") == fresh, (
+        "eval/fixtures/minimal.sarif.json is stale — regenerate it with "
+        "`python scripts/regen_sarif_sample.py` and commit the result"
     )
