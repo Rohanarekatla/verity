@@ -69,7 +69,7 @@ class AgentCheckResult:
     url: str
     task: str
     succeeded: bool
-    verdict: str                       # passed | failed | infeasible | looped
+    verdict: str                       # passed | failed | infeasible | looped | inconclusive (agent never acted)
     findings: list = field(default_factory=list)
     localization: Optional[Localization] = None
     success_source: str = "self-reported"   # or "deterministic (--success)"
@@ -182,9 +182,26 @@ def _finding_from_localization(url: str, task: str, loc: Localization, confirm_f
 
 # -- the orchestration --------------------------------------------------------
 
+def agent_never_acted(episode) -> bool:
+    """
+    True if the episode has steps but not one of them is an attempt on the
+    page: every step is model output that could not be parsed into an action,
+    or a provider error. Then the agent's failure says nothing about the site —
+    blaming a control for it would be a wrong finding (found 31 Oct: a model
+    whose answers were cut off at the token limit failed three steps without
+    acting, and the page's unnamed button was reported as the confirmed cause).
+    A failed click, `report_infeasible`, `done` or a loop all count as acting.
+    """
+    steps = getattr(episode, "steps", None) or []
+    return bool(steps) and all(
+        s.error == "unparseable action" or s.action == "<provider-error>" for s in steps)
+
+
 def _verdict(episode, result, succeeded: bool) -> str:
     if succeeded:
         return "passed"
+    if agent_never_acted(episode):
+        return "inconclusive"
     if getattr(result, "infeasible", False):
         return "infeasible"
     if getattr(result, "looped", False):
@@ -208,7 +225,9 @@ def agent_check(
     `success_fn(env) -> "success"|"failure"|"indeterminate"` decides success
     deterministically (the `--success` evaluators); without it, success is the
     agent's own verdict. A failed check yields exactly one localised finding,
-    `needs-review` unless `confirm_fn` upgrades it.
+    `needs-review` unless `confirm_fn` upgrades it. If the agent never acted
+    (every step unparseable or a provider error) the verdict is
+    `inconclusive` and there is no finding.
     """
     result = agent.run(env, task=url, seed=0, defect=None)
     episode = result.episode
@@ -224,7 +243,9 @@ def agent_check(
 
     findings: list[Finding] = []
     loc: Optional[Localization] = None
-    if not succeeded:
+    # An agent that never acted on the page proves nothing about it: no
+    # localisation, no finding — the verdict is "inconclusive", not "failed".
+    if not succeeded and not agent_never_acted(episode):
         loc = localize_failure(episode, result)
         findings.append(_finding_from_localization(url, task, loc, confirm_fn, page_state_hash))
 

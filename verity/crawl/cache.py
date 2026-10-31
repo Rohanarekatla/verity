@@ -10,6 +10,12 @@ things that change them, and *only* those:
 - **viewport** — a finding is attributed to a viewport (A17.3 of the original
   plan), so two viewports are two entries.
 
+"Ruleset version" must mean *everything that can change a finding on identical
+content*, not a hand-maintained string: `ruleset_fingerprint()` hashes the
+Verity version, the axe-core version, every APG contract, the validator
+(signature) version, the scan's check configuration, and the waiver file. The
+reconciled invalidation set from the Week-17 artifact (both tracks' lists).
+
 Miss any of these and the cache serves stale findings — a correctness bug
 wearing a performance costume (the Week-17 artifact's warning). The key is
 explicit here so the invalidation set is reviewable, not implicit in a hash of
@@ -34,6 +40,32 @@ class CacheKey:
     def digest(self) -> str:
         raw = f"{self.content_hash}|{self.ruleset_version}|{self.viewport}"
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+
+
+def ruleset_fingerprint(repo: Optional[Path] = None) -> str:
+    """A digest of everything besides page content that can change a finding."""
+    repo = Path(repo) if repo else Path(__file__).resolve().parents[2]
+    h = hashlib.sha256()
+
+    def add(label: str, data: bytes) -> None:
+        h.update(label.encode() + b"\0" + data + b"\0")
+
+    try:
+        from verity.agents.validator import VALIDATOR_VERSION
+        from verity.orchestrator.main import MEASURE_FOCUS_VISIBLE
+        add("validator", VALIDATOR_VERSION.encode())
+        add("focus-visible", str(MEASURE_FOCUS_VISIBLE).encode())
+    except Exception:  # never fail the cache over a missing import; the files below still key it
+        add("validator", b"unknown")
+    add("verity", (repo / "pyproject.toml").read_bytes() if (repo / "pyproject.toml").exists() else b"")
+    axe = repo / "node-worker" / "node_modules" / "axe-core" / "package.json"
+    lock = repo / "node-worker" / "package-lock.json"
+    add("axe", axe.read_bytes() if axe.exists() else (lock.read_bytes() if lock.exists() else b""))
+    for contract in sorted((repo / "data" / "apg-contracts").glob("*.yaml")):
+        add(f"contract:{contract.name}", contract.read_bytes())
+    waivers = repo / "waivers.yaml"
+    add("waivers", waivers.read_bytes() if waivers.exists() else b"")
+    return "rs-" + h.hexdigest()[:16]
 
 
 class FindingsCache:

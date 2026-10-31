@@ -1,0 +1,57 @@
+<!doctype html>
+<!--
+  Week 18 demo page (plan v2). A checkout that looks perfect and is broken for
+  any agent that reads the accessibility tree: each button's only content is
+  wrapped in aria-hidden, so none of the three buttons has an accessible name.
+  A sighted mouse user reads "Remove", "Apply coupon", "Place order". A tree
+  agent sees three bare `button`s. (One button was too easy to guess — a
+  small model clicked the only button there was, 31 Oct.) `eval/demo.py` walks the whole story on this page.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Checkout — Verity demo</title>
+    <style>
+      body { font: 16px/1.5 system-ui, sans-serif; max-width: 32rem; margin: 3rem auto; }
+      label { display: block; margin-top: 1rem; }
+      input { font: inherit; padding: .4rem; width: 100%; }
+      button { margin-top: 1.5rem; font: inherit; padding: .6rem 1.2rem; background: #1f4e9c; color: #fff;
+               border: 0; border-radius: 4px; }
+      button.small { margin: .5rem 0 0 .5rem; padding: .2rem .6rem; font-size: .875rem; background: #555; }
+      #item button.small { margin-top: 0; }
+      #place-order { display: block; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Checkout</h1>
+      <p id="item">1 × Accessible Widget — $19.00
+        <button id="remove-item" type="button" class="small"><span aria-hidden="true">Remove</span></button></p>
+      <label for="email">Email</label>
+      <input id="email" type="email" value="buyer@example.com" />
+      <label for="coupon">Coupon code</label>
+      <input id="coupon" type="text" />
+      <button id="apply-coupon" type="button" class="small"><span aria-hidden="true">Apply coupon</span></button>
+      <button id="place-order" type="button"><span aria-hidden="true">Place order</span></button>
+      <p id="status" role="status"></p>
+    </main>
+    <script>
+      // Three buttons, all unnamed in the accessibility tree — like icon-only
+      // buttons on real checkouts. A tree agent cannot tell which one orders;
+      // a wrong guess has real consequences (Remove empties the cart for good).
+      const status = document.getElementById("status");
+      let inCart = true;
+      document.getElementById("remove-item").addEventListener("click", () => {
+        inCart = false;
+        document.getElementById("item").textContent = "Your cart is empty.";
+        status.textContent = "Item removed.";
+      });
+      document.getElementById("apply-coupon").addEventListener("click", () => {
+        status.textContent = "Please enter a coupon code.";
+      });
+      document.getElementById("place-order").addEventListener("click", () => {
+        status.textContent = inCart ? "Order placed. Thank you!" : "Your cart is empty — nothing to order.";
+      });
+    </script>
+  </body>
+</html>

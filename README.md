@@ -14,58 +14,82 @@ equivalent, and Node doesn't have the ML ecosystem. See
 [`docs/adr/0001-polyglot-json-rpc-over-stdio.md`](docs/adr/0001-polyglot-json-rpc-over-stdio.md)
 for the full rationale.
 
+## The story in one line
+
+**The accessibility engine that refuses to lie.** Every finding carries its
+provenance (authoritative / AI-assisted / needs review); nothing is ever
+reported as passing that was not checked; and every scan says exactly what it
+did *not* check.
+
+## Install
+
+```bash
+git clone https://github.com/Rohanarekatla/verity && cd verity
+cd node-worker && npm ci && npx playwright install chromium && npm run build && cd ..
+uv sync
+```
+
+Requirements: Python 3.13 with [uv](https://docs.astral.sh/uv/), Node 22.
+Run every command from the repository root.
+
+## Use it
+
+```bash
+# Scan a page (URL or local file). Exit 0 = no gating failures, 1 = gating failures, 2 = no verdict.
+uv run python -m verity.cli scan https://example.com
+uv run python -m verity.cli scan ./dist/index.html --sarif verity.sarif --earl report.jsonld --trace verity-trace.json
+
+# Gate CI only on NEW findings
+uv run python -m verity.cli scan ./dist/index.html --write-baseline .verity/baseline.json   # once
+uv run python -m verity.cli scan ./dist/index.html --baseline .verity/baseline.json
+
+# Can an AI agent complete a task on your site? (any provider; local Ollama works)
+uv run python -m verity.cli agent-check https://example.com --task "Find the pricing page" --model ollama:qwen3:8b --confirm
+
+# How ready is a page for AI agents, with evidence per point
+uv run python -m verity.cli readiness https://example.com
+
+# An Accessibility Conformance Report (VPAT 2.5, WCAG 2.2) from saved scans
+uv run python -m verity.cli scan https://example.com -o scan.json
+uv run python -m verity.cli acr scan.json --product "Example" --out acr.md --html acr.html
+
+# Verity's checks as MCP tools for a coding agent; WebMCP readiness for forms
+uv run python -m verity.cli mcp
+uv run python -m verity.cli webmcp https://example.com --generate
+```
+
+In GitHub Actions use [`action/`](action/) — findings appear as inline PR
+annotations on the built HTML they came from.
+
+## What it checks
+
+| Wedge | How | Verdict |
+|---|---|---|
+| axe-core, WCAG-tagged rules only | unmodified axe-core 4.13 | authoritative where axe is certain; its `incomplete` items are adjudicated or left for review |
+| **Contrast over images and gradients** (1.4.3) | worst-case ratio from real rendered pixels, font size from the page | authoritative; `cantTell` when the pixels are not stable |
+| **Keyboard** (2.1.1, 2.1.2, 2.4.3, 2.4.7) | real tab-order traversal, multi-cycle trap detection, focus ring by style + pixel diff | three-state: pass / fail / indeterminate (ADR-0004) |
+| **APG widgets** — tabs, disclosure, menu button, dialog, combobox | keys actually pressed against hand-written contracts | WCAG failures gate; APG style deviations are reviewed only |
+| **Agents** — `agent-check`, readiness, MCP, WebMCP | a real LLM agent through the accessibility tree; failures confirmed deterministically | an unconfirmed agent failure is never a site defect |
+
+On the BC-C2 benchmark (`docs/measurements/benchmark-2026-10-19.md`) Verity
+decided 202/202 contrast-over-image failures with 0 false; axe and Pa11y sent
+all 202 to review and Lighthouse missed them silently. On keyboard/widget
+defects Verity caught 7/7, every other tool 0/7.
+
+## What it does not do
+
+23 of the 55 WCAG 2.2 Level A/AA criteria have an automated check here; the
+other 32 need a person, and Verity says so in every report. Full, honest list:
+[`docs/limitations.md`](docs/limitations.md). Vision is an experiment behind a
+flag (ADR-0002). Licences: [`docs/licenses.md`](docs/licenses.md).
+
 ## Status
 
-**End of Phase 1 (10 Aug – 20 Sep 2026).** A scan runs end to end today: it
-renders a real page in Chromium, runs `axe-core`, adjudicates the results
-axe declines to judge, and exits non-zero when an authoritative failure
-exists.
-
-Verified against paired fixtures: the page with a deliberate contrast
-violation yields exactly one authoritative SC 1.4.3 finding on the right
-element and exits 1; the clean page yields none and exits 0. See
-[`node-worker/test/render-axe.test.mjs`](node-worker/test/render-axe.test.mjs).
-
-### What works
-
-| Capability | State |
-|---|---|
-| Render + `axe-core`, all four result buckets | Working |
-| WCAG criterion mapping, `best-practice` rules excluded | Working |
-| **Contrast-over-image adjudication** — `incomplete` resolved from real sampled pixels | Working |
-| Element capture with boxes in CSS *and* device pixels | Working |
-| Deduplication and waivers | Working |
-| Per-scan latency in the report | Working |
-| Build gating on authoritative findings only | Working |
-
-The contrast wedge is the thing worth knowing about. Where `axe-core`
-returns `incomplete` — most often text over a background image, which it
-cannot read — Verity samples the actual rendered pixels and applies WCAG
-arithmetic to produce an **authoritative** verdict. No model is involved in
-that path.
-
-It only decides where the answer is unambiguous. SC 1.4.3 requires 4.5:1 for
-normal text but 3:1 for large text, and the rendered font size is not
-currently available, so a ratio between 3.0 and 4.5 is reported as
-`cantTell` rather than guessed. That is deliberate: a wrong finding is worse
-than a missing one.
-
-### What does not work yet
-
-- **Keyboard traversal** — the Python judgments (SC 2.1.1 / 2.1.2 / 2.4.3 /
-  2.4.7) are written and tested, but the browser-side traversal is not built,
-  so nothing calls them
-- **Vision** — descoped to an experiment after Spike A. An 8B model abstained
-  on 79% of cases and produced zero false positives but almost no findings.
-  Recorded honestly in
-  [`docs/adr/0002-vision-descope-decision.md`](docs/adr/0002-vision-descope-decision.md)
-- **Audio agent, calibration, SARIF/VPAT reports, the GitHub Action** — not
-  started (Phases 2–4)
-
-For the full picture — including what is half-built and why — see
-[`docs/status.md`](docs/status.md). The schedule is in
-[`docs/execution-plan.md`](docs/execution-plan.md); each directory's own
-`README.md` carries its current state.
+All twenty weeks of the plan are built and tested (`uv run pytest` — 800+
+tests). The Agent Accessibility Benchmark is pre-registered
+(`docs/agentbench/preregistration.md`) and its runs are pending the pilot.
+Schedule and decisions: [`docs/execution-plan.md`](docs/execution-plan.md),
+[`docs/adr/`](docs/adr/).
 
 ## Layout
 
@@ -172,7 +196,7 @@ builds, then runs the protocol suite and the render/axe gate tests —
 ```bash
 cd ..
 uv sync
-uv run pytest verity/tests/
+uv run pytest
 uv run python -m verity.cli scan https://example.com
 ```
 

@@ -316,7 +316,9 @@ def analyze(sites: list[SiteRecord], tasks: Optional[list[TaskRecord]] = None) -
         "top_failing_sc": sc_sites.most_common(10),
     }
     if tasks:
-        ran = [t for t in tasks if t.verdict != "error"]
+        # "inconclusive" = the agent never acted (unparseable output): like an
+        # error, it says nothing about the site, so it is not a failed task.
+        ran = [t for t in tasks if t.verdict not in ("error", "inconclusive")]
         failed = [t for t in ran if not t.succeeded]
         out["tasks"] = {
             "run": len(ran), "errors": len(tasks) - len(ran),

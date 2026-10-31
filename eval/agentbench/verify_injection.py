@@ -45,7 +45,27 @@ _DEFECT_EFFECT = {
     "strip_name": "name_loss",
     "detach_label": "name_loss",
     "div_button": "role_loss",
+    # Keyboard / focus family (H3). These do not change the tree at all, so
+    # they are verified by DRIVING the keyboard: a Tab probe on the clean and
+    # the defect page, compared (`assess_keyboard`).
+    "keyboard_trap": "trap",
+    "remove_from_tab_order": "tab_loss",
+    "outline_none": "focus_indicator_loss",
 }
+KEYBOARD_EFFECTS = frozenset({"trap", "tab_loss", "focus_indicator_loss"})
+TAB_PRESSES = 6
+
+# Where focus is after a key press, and whether it is visibly indicated.
+_ACTIVE_JS = """() => {
+  const a = document.activeElement;
+  if (!a || a === document.body || a === document.documentElement) return {id: null, indicator: false};
+  let id = a.id ? '#' + a.id : a.tagName.toLowerCase();
+  if (!a.id) { const sib = Array.from(a.parentElement ? a.parentElement.children : []); id += ':' + sib.indexOf(a); }
+  const cs = getComputedStyle(a);
+  const outline = cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0;
+  const shadow = cs.boxShadow && cs.boxShadow !== 'none';
+  return {id, indicator: !!(outline || shadow)};
+}"""
 
 # One AXTree observation line: `  [12] button "Save" (focused)` / `generic "x" (clickable)`.
 _LINE = re.compile(r'^\s*(?:\[(\d+)\]\s*)?([A-Za-z]+)(?:\s+"([^"]*)")?(.*)$')
@@ -99,8 +119,11 @@ def assess_change(before: str, after: str, defect: str) -> ChangeAssessment:
     if defect not in _DEFECT_EFFECT:
         return ChangeAssessment(defect, False, f"unknown defect {defect!r}")
 
-    b, a = parse_tree(before), parse_tree(after)
     effect = _DEFECT_EFFECT[defect]
+    if effect in KEYBOARD_EFFECTS:
+        return ChangeAssessment(defect, False, "a keyboard defect does not change the tree; verify it with "
+                                               "tab_probe + assess_keyboard")
+    b, a = parse_tree(before), parse_tree(after)
     bn, an = _named_controls(b), _named_controls(a)
 
     if effect == "name_loss":
@@ -115,6 +138,39 @@ def assess_change(before: str, after: str, defect: str) -> ChangeAssessment:
     detail = (f"buttons {buttons_before} -> {buttons_after}, "
               f"roleless-clickables {clickables_before} -> {clickables_after}")
     return ChangeAssessment(defect, manifested, detail, bn, an)
+
+
+def tab_probe(page, presses: int = TAB_PRESSES) -> list[dict]:
+    """Press Tab from the top of the page `presses` times; record focus and its indicator after each."""
+    page.evaluate("() => { if (document.activeElement) document.activeElement.blur(); }")
+    out = []
+    for _ in range(presses):
+        page.keyboard.press("Tab")
+        out.append(page.evaluate(_ACTIVE_JS))
+    return out
+
+
+def assess_keyboard(clean: list[dict], defect: list[dict], name: str) -> "ChangeAssessment":
+    """Did driving the keyboard behave as the defect intends? (pure)"""
+    effect = _DEFECT_EFFECT.get(name)
+    ids_c = {p["id"] for p in clean if p.get("id")}
+    ids_d = {p["id"] for p in defect if p.get("id")}
+    if effect == "trap":
+        manifested = len(ids_c) >= 2 and len(ids_d) == 1
+        detail = f"distinct focus stops clean {len(ids_c)} -> defect {len(ids_d)}"
+    elif effect == "tab_loss":
+        manifested = len(ids_d) < len(ids_c)
+        detail = f"distinct focus stops clean {len(ids_c)} -> defect {len(ids_d)}"
+    elif effect == "focus_indicator_loss":
+        had = any(p.get("indicator") for p in clean)
+        manifested = had and not any(p.get("indicator") for p in defect)
+        detail = f"visible focus indicator clean {'yes' if had else 'no'} -> defect " \
+                 f"{'no' if manifested else 'yes'}"
+    else:
+        return ChangeAssessment(name, False, f"{name!r} is not a keyboard defect")
+    if not ids_c:
+        manifested, detail = False, "the clean page has nothing focusable; the defect cannot be verified"
+    return ChangeAssessment(name, manifested, detail)
 
 
 @dataclass
@@ -134,15 +190,20 @@ def verify(env, task: str, seed: int, defect: str) -> VerifyResult:
     defect manifested in the tree and the pixels are identical. The caller
     aborts the variant when `ok` is False.
     """
+    keyboard = _DEFECT_EFFECT.get(defect) in KEYBOARD_EFFECTS
+
     env.reset(task, seed, defect=None)
     clean_tree = env.observe()
     clean_png = env.screenshot()
+    clean_probe = tab_probe(env.page) if keyboard else None
 
     env.reset(task, seed, defect=defect)
     defect_tree = env.observe()
-    defect_png = env.screenshot()
+    defect_png = env.screenshot()          # before any key press: nothing focused yet
+    defect_probe = tab_probe(env.page) if keyboard else None
 
-    assessment = assess_change(clean_tree, defect_tree, defect)
+    assessment = (assess_keyboard(clean_probe, defect_probe, defect) if keyboard
+                  else assess_change(clean_tree, defect_tree, defect))
     pixels_identical = clean_png == defect_png
 
     reasons: list[str] = []

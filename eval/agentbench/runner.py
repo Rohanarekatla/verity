@@ -72,10 +72,10 @@ AGENTS = {"tree": TreeAgent, "browser_use": BrowserUseAgent, "screen_reader": Sc
 ORDER_SEED = 20261108
 CLEAN = "clean"
 
-# Defect id -> WCAG defect family, for the analysis tables. Only the three name
-# defects exist in defects.js today; the keyboard/focus injectors the
-# pre-registration also lists arrive with the Week-13 agents.
-DEFECT_FAMILY = {"strip_name": "name", "div_button": "name", "detach_label": "name"}
+# Defect id -> WCAG defect family, for the analysis tables (pre-reg §4): the
+# name family and the keyboard/focus family (H3).
+DEFECT_FAMILY = {"strip_name": "name", "div_button": "name", "detach_label": "name",
+                 "keyboard_trap": "keyboard", "remove_from_tab_order": "keyboard", "outline_none": "focus"}
 
 # MiniWoB's raw reward is time-discounted into (0, 1] on a solve and <= 0
 # otherwise, so the operational env-reward evaluator for MiniWoB counts any
