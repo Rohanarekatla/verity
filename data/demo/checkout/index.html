@@ -1,0 +1,36 @@
+<!doctype html>
+<!--
+  Week 18 demo page (plan v2). A checkout that looks perfect and is broken for
+  any agent that reads the accessibility tree: the "Place order" button's only
+  content is wrapped in aria-hidden, so the button has NO accessible name.
+  A sighted mouse user sees and clicks it. A tree agent sees `button` and
+  nothing else. `eval/demo.py` walks the whole story on this page.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Checkout — Verity demo</title>
+    <style>
+      body { font: 16px/1.5 system-ui, sans-serif; max-width: 32rem; margin: 3rem auto; }
+      label { display: block; margin-top: 1rem; }
+      input { font: inherit; padding: .4rem; width: 100%; }
+      button { margin-top: 1.5rem; font: inherit; padding: .6rem 1.2rem; background: #1f4e9c; color: #fff;
+               border: 0; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Checkout</h1>
+      <p>1 × Accessible Widget — $19.00</p>
+      <label for="email">Email</label>
+      <input id="email" type="email" value="buyer@example.com" />
+      <button id="place-order" type="button"><span aria-hidden="true">Place order</span></button>
+      <p id="status" role="status"></p>
+    </main>
+    <script>
+      document.getElementById("place-order").addEventListener("click", () => {
+        document.getElementById("status").textContent = "Order placed. Thank you!";
+      });
+    </script>
+  </body>
+</html>

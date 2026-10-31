@@ -57,6 +57,25 @@ See [`docs/adr/`](docs/adr/) for the design decisions already made
 about this boundary (framing, error codes, why stdio instead of HTTP)
 before proposing an alternative.
 
+## Adding checks: fixtures are mandatory
+
+Every check ships the proof that it works, or it does not merge:
+
+- **APG contract** (`data/apg-contracts/*.yaml`): a `fixtures: {pass, fail}`
+  block. The A9.4 gate (`verity/tests/test_contract_gate.py`) rejects a
+  contract that raises anything on its pass fixture or fails nothing on its
+  fail fixture. Write the YAML before the checking code.
+- **Community rule pack** (`rulepacks/*.verity-rule.yaml`): the same rule —
+  `uv run python -m verity.cli rules verify rulepacks/` must print `OK`.
+  Prefer declarative rules; Python rules run sandboxed and never gate.
+  See [`rulepacks/README.md`](rulepacks/README.md).
+- **Injector** (`eval/inject/`): reversible, and its test proves it changes
+  exactly what it claims and nothing else.
+- **Any new closed-vocabulary output field**: register it in
+  `verity/schema_lint.py` (a judgment must carry an escape such as `unknown`).
+
+Good first issues: a new APG contract (declarative YAML + two fixtures).
+
 ## Commit and PR conventions
 
 - Commit messages: short imperative summary line, blank line, then the

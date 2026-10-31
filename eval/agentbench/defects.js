@@ -87,7 +87,53 @@
     }
   }
 
-  const DEFECTS = { detach_label: detachLabel, strip_name: stripName, div_button: divButton };
+  // --- keyboard / focus defects (H3; added 2026-10-30 for the pre-registered
+  // keyboard family). Invisible in a static render by construction: they only
+  // change what happens when the keyboard is used.
+
+  const FOCUSABLE = "a[href], button, input, select, textarea, [tabindex]:not([tabindex='-1'])";
+
+  function rendered(el) {
+    return el.offsetParent !== null || el.getClientRects().length > 0;
+  }
+
+  function keyboardTrap(root) {
+    // The first rendered focusable control swallows Tab / Shift+Tab: focus can
+    // reach it but never leave by keyboard (SC 2.1.2). Mirrors
+    // eval/inject/keyboard_trap.py.
+    if (document.querySelector("[" + MARK + "='keyboard_trap']")) return;
+    const el = Array.from(root.querySelectorAll(FOCUSABLE)).find(rendered);
+    if (!el) return;
+    el.setAttribute(MARK, "keyboard_trap");
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Tab") { e.preventDefault(); e.stopPropagation(); el.focus(); }
+    }, true);
+  }
+
+  function removeFromTabOrder(root) {
+    // Every control leaves the Tab sequence (tabindex=-1): still clickable,
+    // still in the accessibility tree, unreachable by Tab (SC 2.1.1).
+    for (const el of root.querySelectorAll("a[href], button, input, select, textarea")) {
+      if (el.hasAttribute(MARK)) continue;
+      el.setAttribute(MARK, "remove_from_tab_order");
+      el.tabIndex = -1;
+    }
+  }
+
+  function outlineNone() {
+    // No visible focus indicator anywhere (SC 2.4.7). A static screenshot has
+    // nothing focused, so pixels are unchanged until the keyboard is used.
+    if (document.querySelector("style[" + MARK + "='outline_none']")) return;
+    const style = document.createElement("style");
+    style.setAttribute(MARK, "outline_none");
+    style.textContent = "*:focus, *:focus-visible { outline: none !important; box-shadow: none !important; }";
+    document.head.appendChild(style);
+  }
+
+  const DEFECTS = {
+    detach_label: detachLabel, strip_name: stripName, div_button: divButton,
+    keyboard_trap: keyboardTrap, remove_from_tab_order: removeFromTabOrder, outline_none: outlineNone,
+  };
 
   window.__verityDefect = (name) => {
     const fn = DEFECTS[name];

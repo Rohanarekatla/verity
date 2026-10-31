@@ -38,6 +38,10 @@ MINIWOB_HTML = HERE / "vendor" / "miniwob-plusplus" / "miniwob" / "html" / "mini
 BUTTON_DEFECTS = ("strip_name", "div_button")
 LINK_DEFECTS = ("strip_name",)
 FORM_DEFECTS = ("detach_label",)
+# Keyboard / focus family (H3): a control out of the Tab order, a trap, no focus
+# ring. They only bite agents that use the keyboard (the screen-reader agent),
+# so they apply to every task family that needs a control.
+KEYBOARD_DEFECTS = ("keyboard_trap", "remove_from_tab_order", "outline_none")
 
 
 @dataclass(frozen=True)
@@ -55,7 +59,7 @@ class Task:
 # effect is measured on more than one task shape (plan H1).
 MINIWOB_TASKS: tuple[Task, ...] = (
     # Buttons — name/role defects bite hardest here.
-    Task("click-button", "miniwob", "button", BUTTON_DEFECTS),
+    Task("click-button", "miniwob", "button", BUTTON_DEFECTS + KEYBOARD_DEFECTS),
     Task("click-button-sequence", "miniwob", "button", BUTTON_DEFECTS),
     Task("click-test", "miniwob", "button", BUTTON_DEFECTS),
     Task("click-widget", "miniwob", "button", BUTTON_DEFECTS),
@@ -63,22 +67,22 @@ MINIWOB_TASKS: tuple[Task, ...] = (
     Task("click-dialog-2", "miniwob", "button", BUTTON_DEFECTS),
     Task("button-delay", "miniwob", "button", BUTTON_DEFECTS),
     # Links / navigation — the name defect applies.
-    Task("click-link", "miniwob", "link", LINK_DEFECTS),
+    Task("click-link", "miniwob", "link", LINK_DEFECTS + KEYBOARD_DEFECTS),
     Task("click-menu", "miniwob", "link", LINK_DEFECTS),
     Task("click-menu-2", "miniwob", "link", LINK_DEFECTS),
     Task("click-tab", "miniwob", "link", LINK_DEFECTS),
     Task("click-tab-2", "miniwob", "link", LINK_DEFECTS),
     # Labelled selection controls — detach_label removes the name.
-    Task("click-checkboxes", "miniwob", "select", FORM_DEFECTS),
+    Task("click-checkboxes", "miniwob", "select", FORM_DEFECTS + KEYBOARD_DEFECTS),
     Task("click-checkboxes-soft", "miniwob", "select", FORM_DEFECTS),
     Task("click-option", "miniwob", "select", FORM_DEFECTS),
     Task("choose-list", "miniwob", "select", FORM_DEFECTS),
     Task("click-collapsible", "miniwob", "select", FORM_DEFECTS),
     # Text-entry forms — labels name the inputs.
-    Task("enter-text", "miniwob", "form", FORM_DEFECTS),
+    Task("enter-text", "miniwob", "form", FORM_DEFECTS + KEYBOARD_DEFECTS),
     Task("enter-text-dynamic", "miniwob", "form", FORM_DEFECTS),
     Task("enter-password", "miniwob", "form", FORM_DEFECTS),
-    Task("login-user", "miniwob", "form", FORM_DEFECTS),
+    Task("login-user", "miniwob", "form", FORM_DEFECTS + KEYBOARD_DEFECTS),
     Task("use-autocomplete", "miniwob", "form", FORM_DEFECTS),
     Task("focus-text", "miniwob", "form", FORM_DEFECTS),
     Task("email-inbox-forward", "miniwob", "form", FORM_DEFECTS),
