@@ -37,13 +37,22 @@ class OllamaProvider(BaseProvider):
     local = True
 
     def __init__(self, model: str, *, host: Optional[str] = None, keep_alive: str = "30m",
-                 options: Optional[dict] = None, **kw):
+                 options: Optional[dict] = None, think=None, format=None, **kw):
         super().__init__(model, **kw)
         self.host = (host or os.environ.get("OLLAMA_HOST") or DEFAULT_HOST).rstrip("/")
         if not self.host.startswith(("http://", "https://")):
             self.host = "http://" + self.host
         self.keep_alive = keep_alive
         self.options = dict(options or {})
+        # Reasoning models (gpt-oss, qwen3.x): Ollama's `think` — False to turn
+        # thinking off, or "low"/"medium"/"high" for models that only take a
+        # level (gpt-oss). None sends nothing (the model's default). Thinking
+        # tokens count against num_predict, so a long think can starve the answer.
+        self.think = think
+        # Ollama's structured output: "json" or a JSON schema. `think=False` is not
+        # honoured by every model (qwen3:4b still reasons aloud in `content`), so for
+        # calls that must return one JSON object, constrain the shape here.
+        self.format = format
 
     def _request(self, messages: list[Message], *, system, max_tokens, cache, seed, cache_key):
         msgs = ([{"role": "system", "content": system}] if system else []) + \
@@ -54,6 +63,10 @@ class OllamaProvider(BaseProvider):
             options["seed"] = seed
         body = {"model": self.model, "messages": msgs, "stream": False,
                 "keep_alive": self.keep_alive, "options": options}
+        if self.think is not None:
+            body["think"] = self.think
+        if self.format is not None:
+            body["format"] = self.format
         return f"{self.host}/api/chat", {"Content-Type": "application/json"}, body
 
     def _parse(self, body: dict, wall_s: float) -> Completion:

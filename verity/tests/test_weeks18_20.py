@@ -119,11 +119,16 @@ def test_the_repository_itself_is_clean():
 
 # --- W18 demo page ------------------------------------------------------------------
 
-def test_the_demo_page_has_exactly_the_one_defect_the_story_needs():
+def test_the_demo_page_has_exactly_the_defect_the_story_needs():
     from bs4 import BeautifulSoup
 
     html = (REPO / "data" / "demo" / "checkout" / "index.html").read_text(encoding="utf-8")
     soup = BeautifulSoup(html, "html.parser")
-    btn = soup.select_one("#place-order")
-    assert btn.get("aria-label") is None and btn.span["aria-hidden"] == "true"
+    # Every button is unnamed (so a tree agent cannot guess the right one)...
+    buttons = soup.select("button")
+    assert [b["id"] for b in buttons] == ["remove-item", "apply-coupon", "place-order"]
+    for btn in buttons:
+        assert btn.get("aria-label") is None and btn.span["aria-hidden"] == "true"
+    # ...and nothing else is broken: the fields stay labelled.
     assert soup.select_one('label[for="email"]') and soup.select_one("#email")
+    assert soup.select_one('label[for="coupon"]') and soup.select_one("#coupon")
