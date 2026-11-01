@@ -73,12 +73,17 @@ def crawl_site(
     bounds: Optional[CrawlBounds] = None,
     budget: Optional[CrawlBudget] = None,
     cache: Optional[FindingsCache] = None,
-    ruleset_version: str = "1.0.0",
+    ruleset_version: Optional[str] = None,
     viewport: str = "default",
 ) -> SiteReport:
     """Crawl `seeds` within `bounds` and `budget`, caching findings by content."""
     if not seeds:
         return SiteReport(seeds=[])
+    if ruleset_version is None:
+        # Everything that can change a finding on identical content (cache.py).
+        from verity.crawl.cache import ruleset_fingerprint
+
+        ruleset_version = ruleset_fingerprint()
     bounds = bounds or CrawlBounds()
     budget = budget or CrawlBudget(max_pages=bounds.max_pages)
 

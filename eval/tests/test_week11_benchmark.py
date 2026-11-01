@@ -73,8 +73,9 @@ def test_suite_is_the_preregistered_size():
     assert 20 <= s["tasks"] <= 30, f"plan calls for 20-30 tasks, got {s['tasks']}"
     # Every family represented.
     assert set(s["families"]) == {"button", "link", "select", "form"}
-    # All three defects are exercised.
-    assert set(s["defect_coverage"]) == {"strip_name", "div_button", "detach_label"}
+    # All six pre-registered defects are exercised (name family + keyboard/focus, H3).
+    assert set(s["defect_coverage"]) == {"strip_name", "div_button", "detach_label",
+                                         "keyboard_trap", "remove_from_tab_order", "outline_none"}
 
 
 def test_every_task_declares_at_least_one_defect_and_env_reward():

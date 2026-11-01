@@ -92,6 +92,29 @@ def test_success_fn_overrides_self_report():
     assert len(res.findings) == 1
 
 
+def test_agent_that_never_acted_is_inconclusive_with_no_finding():
+    # Found in the W18 demo run (31 Oct): every answer was cut off before an
+    # action, yet the page's unnamed button was reported as the CONFIRMED
+    # cause. An agent that never touched the page proves nothing about it.
+    def confirm(loc):  # would confirm anything — must never be reached
+        return (Provenance.AUTHORITATIVE,
+                Confidence(score=1.0, method="deterministic", model=None, escape_used=False), "fail")
+
+    steps = [Step(observation='[3] button\n[9] button', action="Okay, let me think…", ok=False,
+                  error="unparseable action") for _ in range(3)]
+    res = agent_check("http://x", "Place the order", agent=FakeAgent(_result(steps)),
+                      env=object(), success_fn=lambda env: "failure", confirm_fn=confirm)
+    assert res.succeeded is False and res.verdict == "inconclusive"
+    assert res.findings == [] and res.localization is None
+
+
+def test_one_real_action_among_parse_failures_still_localises():
+    steps = [Step(observation='[3] button', action="garbled", ok=False, error="unparseable action"),
+             Step(observation='[3] button', action="report_infeasible", ok=True)]
+    res = agent_check("http://x", "t", agent=FakeAgent(_result(steps, infeasible=True)), env=object())
+    assert res.verdict == "infeasible" and len(res.findings) == 1
+
+
 # --- reports ----------------------------------------------------------------
 
 def test_build_audit_report_wraps_findings():

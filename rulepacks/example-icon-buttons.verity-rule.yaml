@@ -1,0 +1,12 @@
+# Example community rule pack (declarative — no code runs).
+# Copy this file to add your own; the fixtures are mandatory and are checked by
+#   uv run python -m verity.cli rules verify rulepacks/
+id: example-icon-buttons-named
+sc: "4.1.2"
+description: "An icon-only button (class 'icon') must carry an aria-label."
+select: "button.icon"
+assert:
+  attribute_present: aria-label
+fixtures:
+  pass: fixtures/example-icon-buttons-pass.html
+  fail: fixtures/example-icon-buttons-fail.html

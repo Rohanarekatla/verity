@@ -85,6 +85,30 @@ def test_a_patch_that_introduces_a_regression_is_refused_and_retried(project):
     assert "new failure" in patcher.feedback[1][0], "the refusal reason is fed back to the patcher"
 
 
+def test_a_patch_that_leaves_broken_markup_is_refused_even_if_the_defect_is_gone(project):
+    # The 31 Oct demo patch: the opening <span> was dropped, its closing tag left behind.
+    page = '<button id="go"><span aria-hidden="true">Go</span></button>'
+    (project / "index.html").write_text(f"<body>{page}</body>", encoding="utf-8")
+    sloppy = Patch("", '<button id="go"><span aria-hidden="true">Go</span></button>',
+                   '<button id="go" aria-label="Go">Go</span></button>')
+    sound = Patch("", '<span aria-hidden="true">Go</span>', "Go")
+    scan = lambda path: [finding(sel="#go")] if "aria-hidden" in Path(path).read_text() else []   # defect = hidden name
+    patcher = ScriptedPatcher([sloppy, sound])
+    r = fix_finding(finding(sel="#go"), project_root=project, page="index.html", scan_fn=scan, patcher=patcher)
+    assert not r.attempts[0].accepted and "stray </span>" in r.attempts[0].reasons[0]
+    assert "stray </span>" in patcher.feedback[1][0], "the reason is fed back so the model can correct it"
+    assert r.accepted and len(r.attempts) == 2
+
+
+def test_markup_check_only_blames_what_the_patch_added():
+    from verity.remediation.fix_loop import markup_regressions
+    sloppy = "<div><p>one<p>two</div></i>"            # optional </p> and a stray </i> already there
+    assert markup_regressions(sloppy, sloppy.replace("one", "uno")) == []
+    assert markup_regressions("<b>x</b>", "<b>x</span></b>") == ["the patch broke the markup: stray </span>"]
+    assert markup_regressions("<b>x</b>", "<b><i>x</b>") == ["the patch broke the markup: unclosed <i>"]
+    assert markup_regressions('<img src="a"><br>', '<img src="a" alt="a"><br>') == []   # void elements are fine
+
+
 def test_after_three_refusals_it_hands_off_with_every_reason(project):
     patcher = ScriptedPatcher([Patch("", "not in the file", "x")] * 3)
     r = fix_finding(finding(), project_root=project, page="index.html", scan_fn=fake_scan, patcher=patcher)

@@ -142,6 +142,7 @@ async def run_cli_scan(
     baseline_path: Optional[str] = None,
     trace_path: Optional[str] = None,
     earl_path: Optional[str] = None,
+    rules_dir: Optional[str] = None,
 ) -> int:
     """Runs the scan orchestrator and saves/prints output."""
     from verity.observability import ScanTrace, render_coverage
@@ -154,7 +155,8 @@ async def run_cli_scan(
     try:
         return await _run_cli_scan(url, output_path, timeout, worker_cmd, sarif_path, junit_path, config_path,
                                    write_baseline_path, baseline_path, trace, load_policy,
-                                   gate_against_baseline, open_baseline, render_coverage, earl_path)
+                                   gate_against_baseline, open_baseline, render_coverage, earl_path,
+                                   rules_dir)
     finally:
         if trace_path:
             try:
@@ -166,7 +168,7 @@ async def run_cli_scan(
 
 async def _run_cli_scan(url, output_path, timeout, worker_cmd, sarif_path, junit_path, config_path,
                         write_baseline_path, baseline_path, trace, load_policy, gate_against_baseline,
-                        open_baseline, render_coverage, earl_path=None) -> int:
+                        open_baseline, render_coverage, earl_path=None, rules_dir=None) -> int:
     try:
         # B8.4 — the gating policy is loaded before the scan, so a bad `ci:`
         # block fails immediately rather than after a 30-second render.
@@ -182,6 +184,22 @@ async def _run_cli_scan(url, output_path, timeout, worker_cmd, sarif_path, junit
         report: AuditReport = await scan_url(
             url=url, node_worker_command=worker_cmd, timeout=timeout, trace=trace
         )
+
+        # S19.6 — community rule packs: fixture-gated, sandboxed, never gating.
+        if rules_dir:
+            from verity.orchestrator.main import build_conformance_map
+            from verity.plugins import findings_for, load_packs
+
+            packs, problems = load_packs(Path(rules_dir))
+            for problem in problems:
+                logger.warning("Rule pack not loaded: %s", problem)
+            dom = trace.artifacts.get("dom_path")
+            if packs and dom and Path(dom).exists():
+                extra = findings_for(packs, Path(dom).read_text(encoding="utf-8", errors="replace"),
+                                     page_state_hash=trace.artifacts.get("content_hash", ""))
+                report.findings.extend(extra)
+                report.conformance = build_conformance_map(report.findings)
+                logger.info("%d community rule pack(s): %d finding(s), all needs-review.", len(packs), len(extra))
 
         # Print human-readable summary, then what was and was not checked.
         print_report_summary(report)
@@ -609,6 +627,8 @@ def main() -> None:
         metavar="PATH",
         help="Write verity-trace.json (stage timings and exactly what was not checked)",
     )
+    scan_parser.add_argument("--rules", type=str, default=None, metavar="DIR",
+                             help="Apply community rule packs from DIR (fixture-gated; findings never gate)")
     scan_parser.add_argument("--earl", type=str, default=None, metavar="PATH",
                              help="Write an EARL 1.0 JSON-LD report (ACT implementation-report format)")
 
@@ -636,6 +656,12 @@ def main() -> None:
     ac.add_argument("--confirm", action="store_true",
                     help="Confirm a localised failure with Verity's deterministic checks on the live page "
                          "(B14.1′); a confirmed failure is authoritative and can gate")
+
+    # 'rules' command (S19.5/S19.6) — verify community rule packs against their fixtures.
+    rules = subparsers.add_parser("rules", help="Community rule packs")
+    rules_sub = rules.add_subparsers(dest="rules_cmd", required=True)
+    rv = rules_sub.add_parser("verify", help="Run every pack against its mandatory pass/fail fixtures")
+    rv.add_argument("directory", nargs="?", default="rulepacks")
 
     # 'acr' command (B16.1/B16.2) — VPAT 2.5 ACR from saved scan reports.
     acr = subparsers.add_parser("acr", help="Build an Accessibility Conformance Report (VPAT 2.5, WCAG 2.2)")
@@ -673,6 +699,15 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    if args.command == "rules":
+        from verity.plugins import load_packs
+
+        packs, problems = load_packs(Path(args.directory))
+        for pack in packs:
+            print(f"OK    {pack.id} ({'python' if pack.script else 'declarative'}, SC {pack.sc})")
+        for problem in problems:
+            print(f"FAIL  {problem}")
+        sys.exit(1 if problems else 0)
     if args.command == "acr":
         sys.exit(run_acr_cli(args.reports, product=args.product, manual=args.manual, aaa=args.aaa,
                              out=args.out, html_out=args.html))
@@ -707,6 +742,7 @@ def main() -> None:
                 baseline_path=args.baseline,
                 trace_path=args.trace,
                 earl_path=args.earl,
+                rules_dir=args.rules,
             )
         )
         sys.exit(exit_code)

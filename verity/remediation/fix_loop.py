@@ -38,7 +38,9 @@ import json
 import re
 import shutil
 import tempfile
+from collections import Counter
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Callable, Optional, Protocol
 
@@ -135,6 +137,60 @@ def apply_patch(text: str, patch: Patch) -> tuple[Optional[str], Optional[str]]:
     return text.replace(patch.old, patch.new, 1), None
 
 
+_VOID = frozenset("area base br col embed hr img input link meta param source track wbr".split())
+# End tag optional in HTML: leaving these open is valid markup, not a defect.
+_OPTIONAL_END = frozenset("html head body p li dt dd tr td th thead tbody tfoot option optgroup colgroup".split())
+
+
+class _TagBalance(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[str] = []
+        self.problems: Counter = Counter()
+
+    def handle_starttag(self, tag, attrs):
+        if tag not in _VOID:
+            self.stack.append(tag)
+
+    def handle_startendtag(self, tag, attrs):
+        pass
+
+    def handle_endtag(self, tag):
+        if tag in _VOID:
+            return
+        if tag not in self.stack:
+            self.problems[f"stray </{tag}>"] += 1
+            return
+        while self.stack[-1] != tag:
+            skipped = self.stack.pop()
+            if skipped not in _OPTIONAL_END:
+                self.problems[f"unclosed <{skipped}>"] += 1
+        self.stack.pop()
+
+    def finish(self) -> Counter:
+        self.close()
+        for tag in self.stack:
+            if tag not in _OPTIONAL_END:
+                self.problems[f"unclosed <{tag}>"] += 1
+        return self.problems
+
+
+def markup_regressions(before: str, after: str) -> list[str]:
+    """
+    Tag-balance problems the patch ADDED (stray end tags, unclosed elements).
+    A page that was already sloppy is not blamed for what it had; only a patch
+    that leaves the markup worse than it found it is refused. The re-scan
+    cannot see this: a browser quietly repairs `<b>x</span></b>`.
+    """
+    def problems(text: str) -> Counter:
+        p = _TagBalance()
+        p.feed(text)
+        return p.finish()
+
+    added = problems(after) - problems(before)
+    return [f"the patch broke the markup: {k}" + (f" (x{n})" if n > 1 else "") for k, n in sorted(added.items())]
+
+
 def unified_diff(path: str, before: str, after: str) -> tuple[str, int]:
     lines = list(difflib.unified_diff(before.splitlines(keepends=True), after.splitlines(keepends=True),
                                       fromfile=f"a/{path}", tofile=f"b/{path}"))
@@ -191,6 +247,11 @@ def fix_finding(
             if patched is None:
                 result.attempts.append(Attempt(n, patch, False, [why]))
                 feedback = [why]
+                continue
+            broken = markup_regressions(original, patched) if Path(loc.file).suffix.lower() in (".html", ".htm") else []
+            if broken:
+                result.attempts.append(Attempt(n, patch, False, broken))
+                feedback = broken
                 continue
             Path(loc.file).write_text(patched, encoding="utf-8")
             if build_fn is not None:
