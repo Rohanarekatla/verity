@@ -27,19 +27,31 @@ def print_report_summary(report: AuditReport) -> None:
     print(f" Target URL     : {report.target}")
     print(f" WCAG Standard  : {report.standard}")
     print(f" Verity Version : {report.verity_version}")
-    print(f" Total Findings : {len(report.findings)}")
+    # Split deterministic violations from items we could not decide: a page
+    # with 0 failures but some review items is a pass, and lumping them under
+    # one "Total Findings" count reads like the tool found real problems.
+    failures = [f for f in report.findings if f.outcome == "fail"]
+    review = [f for f in report.findings if f.outcome != "fail"]
+    print(f" Failures       : {len(failures)}")
+    print(f" Needs review   : {len(review)}")
     print("-" * 60)
 
-    if not report.findings:
-        print(" SUCCESS: No deterministic accessibility violations detected!")
-    else:
-        print(" FINDINGS SUMMARY:")
-        for idx, finding in enumerate(report.findings, start=1):
+    def _list(title: str, findings: list) -> None:
+        print(f" {title}:")
+        for idx, finding in enumerate(findings, start=1):
             severity_str = finding.severity.value.upper()
-            sc_id = finding.sc.id
             selector = finding.evidence.dom_selector or "N/A"
-            print(f"  {idx}. [{severity_str}] SC {sc_id} - {finding.message}")
+            print(f"  {idx}. [{severity_str}] SC {finding.sc.id} - {finding.message}")
             print(f"     Selector: {selector}")
+
+    if not failures:
+        print(" SUCCESS: no deterministic accessibility violations detected.")
+    else:
+        _list("FAILURES (gate the build)", failures)
+    if review:
+        if failures:
+            print("-" * 60)
+        _list("NEEDS MANUAL REVIEW (does not gate)", review)
 
     print("=" * 60 + "\n")
 

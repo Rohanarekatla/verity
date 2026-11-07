@@ -1,199 +1,124 @@
 # Verity
 
-Verity is a WCAG accessibility conformance engine. It screens a page
-with `axe-core`, adjudicates ambiguous results deterministically (e.g.
-contrast over images), and — where a model is used at all — treats the
-model as a *localiser* whose output still has to clear a deterministic
-check before it becomes a finding.
-
-It's a **polyglot system**: a Python orchestrator (ML, calibration,
-trust machinery, report generation) drives a long-lived Node.js worker
-(Playwright + `axe-core`) over JSON-RPC 2.0 on stdio. Neither language
-does the other's job — Python doesn't have a trustworthy `axe-core`
-equivalent, and Node doesn't have the ML ecosystem. See
-[`docs/adr/0001-polyglot-json-rpc-over-stdio.md`](docs/adr/0001-polyglot-json-rpc-over-stdio.md)
-for the full rationale.
-
-## Status
-
-**End of Phase 1 (10 Aug – 20 Sep 2026).** A scan runs end to end today: it
-renders a real page in Chromium, runs `axe-core`, adjudicates the results
-axe declines to judge, and exits non-zero when an authoritative failure
-exists.
-
-Verified against paired fixtures: the page with a deliberate contrast
-violation yields exactly one authoritative SC 1.4.3 finding on the right
-element and exits 1; the clean page yields none and exits 0. See
-[`node-worker/test/render-axe.test.mjs`](node-worker/test/render-axe.test.mjs).
-
-### What works
-
-| Capability | State |
-|---|---|
-| Render + `axe-core`, all four result buckets | Working |
-| WCAG criterion mapping, `best-practice` rules excluded | Working |
-| **Contrast-over-image adjudication** — `incomplete` resolved from real sampled pixels | Working |
-| Element capture with boxes in CSS *and* device pixels | Working |
-| Deduplication and waivers | Working |
-| Per-scan latency in the report | Working |
-| Build gating on authoritative findings only | Working |
-
-The contrast wedge is the thing worth knowing about. Where `axe-core`
-returns `incomplete` — most often text over a background image, which it
-cannot read — Verity samples the actual rendered pixels and applies WCAG
-arithmetic to produce an **authoritative** verdict. No model is involved in
-that path.
-
-It only decides where the answer is unambiguous. SC 1.4.3 requires 4.5:1 for
-normal text but 3:1 for large text, and the rendered font size is not
-currently available, so a ratio between 3.0 and 4.5 is reported as
-`cantTell` rather than guessed. That is deliberate: a wrong finding is worse
-than a missing one.
-
-### What does not work yet
-
-- **Keyboard traversal** — the Python judgments (SC 2.1.1 / 2.1.2 / 2.4.3 /
-  2.4.7) are written and tested, but the browser-side traversal is not built,
-  so nothing calls them
-- **Vision** — descoped to an experiment after Spike A. An 8B model abstained
-  on 79% of cases and produced zero false positives but almost no findings.
-  Recorded honestly in
-  [`docs/adr/0002-vision-descope-decision.md`](docs/adr/0002-vision-descope-decision.md)
-- **Audio agent, calibration, SARIF/VPAT reports, the GitHub Action** — not
-  started (Phases 2–4)
-
-For the full picture — including what is half-built and why — see
-[`docs/status.md`](docs/status.md). The schedule is in
-[`docs/execution-plan.md`](docs/execution-plan.md); each directory's own
-`README.md` carries its current state.
-
-## Layout
+**An accessibility scanner that won't cry wolf.** Verity runs `axe-core`, then
+*resolves* the checks axe leaves as "needs review" — most importantly **text
+over background images** — by sampling the actual rendered pixels and doing the
+WCAG contrast math. You get an **authoritative** pass/fail where other tools
+shrug, and an honest "can't tell" where the answer truly is ambiguous. It never
+invents a finding to look thorough.
 
 ```
-.
-├── node-worker/          # TypeScript: browser + deterministic engines
-│   ├── rpc/               # JSON-RPC 2.0 over stdio: protocol, framing, dispatch, handlers
-│   ├── crawler/            # Chromium lifecycle, render → RenderArtifact, page handoff
-│   ├── static/             # axe-core, accname, geometry, contrast math (authoritative)
-│   ├── interaction/         # Keyboard vs APG contracts (Week 4)
-│   └── state_explorer/       # Bounded modal/menu/error states (Week 17)
-├── verity/                # Python: orchestration, models, ML agents, calibration, reports
-│   ├── models/            # Pydantic schemas — source of truth for types on both sides
-│   ├── orchestrator/       # Spawns/drives the Node worker; the scan pipeline
-│   ├── agents/             # ML workers: vision, audio, contrast-over-image, validator
-│   ├── calibration/        # Confidence calibration (isotonic, conformal)
-│   ├── report/             # SARIF / VPAT-ACR / JUnit generators
-│   └── tests/
-├── eval/                  # Fault-injection harness + frozen accuracy baselines
-├── data/                  # WCAG criteria, APG interaction contracts, test fixtures
-├── rulepacks/              # Custom rule packs + their required fixtures
-├── action/                 # GitHub Action wrapper (depends on verity/report/)
-└── docs/adr/                # Architecture Decision Records
+ VERITY ACCESSIBILITY AUDIT REPORT
+ Target URL     : https://example.com
+ WCAG Standard  : WCAG2.2-AA
+ Failures       : 1
+ Needs review   : 0
+------------------------------------------------------------
+ FAILURES (gate the build):
+  1. [SERIOUS] SC 1.4.3 - Contrast between foreground and background is
+     below the WCAG 2 AA minimum ratio
+     Selector: #low-contrast-text
 ```
 
-Every directory has its own `README.md` — read that before adding
-files to it. For the Node side, [`node-worker/ARCHITECTURE.md`](node-worker/ARCHITECTURE.md) walks a
-single request from stdin to stdout with diagrams and worked examples.
+*Failures gate your build (exit 1); items Verity genuinely can't decide are
+listed separately as "needs review" and never gate.*
 
-## How to work in this repo
+[![CI](https://github.com/Rohanarekatla/verity/actions/workflows/ci.yml/badge.svg)](https://github.com/Rohanarekatla/verity/actions/workflows/ci.yml)
+[![License: MPL-2.0](https://img.shields.io/badge/License-MPL--2.0-brightgreen.svg)](LICENSE)
 
-Two people, two languages, one repo, organised by directory.
+---
 
-| Side | Directories | Test command |
+## Why another a11y scanner?
+
+Automated tools catch only [30–40% of WCAG issues](https://www.deque.com/automated-accessibility-testing-coverage/),
+and a big chunk of what they *do* report on visually rich pages is **noise**:
+
+| The problem | axe-core / Lighthouse / Pa11y | Verity |
 |---|---|---|
-| **Node** — browser, protocol, CI surface | `node-worker/` | `cd node-worker && npm test` |
-| **Python** — orchestration, models, ML, eval | `verity/`, `eval/`, `data/`, `rulepacks/` | `uv run pytest verity/tests/` |
+| **Text over a hero image** | Returned as `incomplete` / "needs review" — you check it by hand. Pa11y has historically surfaced these as hard errors. | Samples the rendered pixels, computes the real ratio, returns an **authoritative** pass or fail. |
+| **The 3.0–4.5:1 grey zone** (large vs normal text) | Guessed or flagged | Reported as **`cantTell`**, never guessed — a wrong finding is worse than a missing one |
+| **"Needs review" items** | Mixed into the error count, so a clean page can look broken | Split out: **failures gate your build, review items never do** |
+| **A model in the loop** | — | Any model is a *localiser* only; its output must clear a deterministic check before it becomes a finding |
 
-**Ownership rotates every phase** — neither engineer stays in one lane.
-Current assignments and the rotation schedule are in
-[`docs/team-plan.md`](docs/team-plan.md). A PR into a lane you don't
-currently own gets reviewed by the person who does; that review is the
-point.
+If you've ever had a CI build go red over a contrast "error" on a background
+image that was actually fine, Verity is built for exactly that.
 
-You don't need the other side's toolchain installed to work on your
-own — Node isn't required to touch `verity/`, and Python isn't
-required to touch `node-worker/`. You only need both when testing the
-full contract (see below).
+## Install & run
 
-**"Where do I put this?"**
-
-- A new ML worker or verification step → `verity/agents/` (own file,
-  read its `README.md` first — there's a rule about models never being
-  the sole source of a verdict).
-- A new WCAG/APG reference fact → `data/` (no code, just structured
-  data).
-- A new fault-injection type or accuracy check → `eval/`.
-- A new output format (SARIF, JUnit, ...) → `verity/report/`.
-- A change to what the worker can do (new RPC method, new field on a
-  result) → **both** `node-worker/rpc/protocol.ts` and
-  `verity/models/schemas.py` in the same PR. This is the one case
-  that always touches both directories — see next section.
-
-**Changing the shared contract**
-
-`protocol.ts` and `schemas.py` are two views of the same interface.
-If you change one without the other, the two processes silently start
-disagreeing about what a message means. The rule:
-
-1. Edit both files in the same PR.
-2. Add/update a test on each side (`node-worker/test/`,
-   `verity/tests/`) that exercises the change.
-3. Run the contract check: `python3 node-worker/contract/reference_client.py`
-   against a freshly built worker — it's the fastest way to see the
-   two sides actually talking.
-4. If the change reverses a decision in `docs/adr/`, update that ADR
-   rather than leaving it to go stale.
-
-**Before you propose a different design** for the transport, framing,
-or error handling — check `docs/adr/` first. It usually already
-records why the current approach was chosen and what alternative lost.
-
-**CI** (`.github/workflows/ci.yml`) runs all three checks — Node
-build+test, Python pytest, and the cross-language contract — on every
-push and PR, so a break on either side is caught before merge.
-
-## Getting started
-
-### Node worker
+**Prerequisites:** Node 22+, Python 3.13+, and [`uv`](https://docs.astral.sh/uv/)
+(`curl -LsSf https://astral.sh/uv/install.sh | sh`).
 
 ```bash
-cd node-worker
-npm install
-npx playwright install chromium
-npm test
-```
+git clone https://github.com/Rohanarekatla/verity.git
+cd verity
 
-`npx playwright install` downloads the browser binary (once). `npm test`
-builds, then runs the protocol suite and the render/axe gate tests —
-19/19.
+# 1. Node worker — browser + axe-core engine (downloads Chromium once, ~180 MB)
+cd node-worker && npm install && npx playwright install chromium && npm run build && cd ..
 
-### Python orchestrator
-
-```bash
-cd ..
+# 2. Python orchestrator
 uv sync
-uv run pytest verity/tests/
+
+# 3. Scan a page
 uv run python -m verity.cli scan https://example.com
 ```
 
-The leading `cd ..` returns to the repo root after the Node block above.
-The CLI runs as a module, so it must be launched from the root — from
-`node-worker/` it fails with `No module named 'verity'`.
+Verity exits **1** when an authoritative failure exists and **0** when the page
+is clean — so it drops straight into CI. The first scan is slower while Chromium
+warms up; subsequent scans are quick.
 
-### Prove the cross-language contract
+Full walkthrough: [RUNNING.md](RUNNING.md).
 
-```bash
-cd node-worker
-npm run build
-cd ..
-python3 node-worker/contract/reference_client.py
+## What it checks today
+
+| Capability | State |
+|---|---|
+| `axe-core` full ruleset + WCAG 2.2 criterion mapping (`best-practice` excluded) | ✅ |
+| **Contrast-over-image adjudication** — `incomplete` resolved from sampled pixels | ✅ |
+| Honest `cantTell` for the 3.0–4.5:1 band (no guessing) | ✅ |
+| Keyboard traversal → SC 2.1.1 / 2.1.2 / 2.4.3 / 2.4.7 | ✅ |
+| APG interaction contracts for ARIA widgets | ✅ |
+| Dedup, waivers, per-scan latency in the report | ✅ |
+| **SARIF** (GitHub code-scanning), JUnit, VPAT output | ✅ |
+| **GitHub Action** + content-addressed baselines + build gating | ✅ |
+| Configurable gating policy (`fail_on` / `annotate_on`) | ✅ |
+
+### Research direction: agent accessibility
+
+Verity also hosts an experimental benchmark for a newer question: **do WCAG
+defects break AI web agents?** It measures whether an agent's task-success rate
+drops on pages with injected accessibility defects, and exposes Verity's checks
+over an MCP server so a fix loop can be verifier-gated. This is early and gated
+behind model keys/budget — see [`docs/agentbench/`](docs/agentbench/). The
+scanner above is the stable, usable product.
+
+## How it works
+
+A **polyglot system**: a Python orchestrator (ML, calibration, trust machinery,
+report generation) drives a long-lived Node.js worker (Playwright + `axe-core`)
+over JSON-RPC 2.0 on stdio. Python has the ML ecosystem; Node has the only
+trustworthy `axe-core`. Neither does the other's job. Rationale in
+[`docs/adr/0001-polyglot-json-rpc-over-stdio.md`](docs/adr/0001-polyglot-json-rpc-over-stdio.md).
+
 ```
+node-worker/   TypeScript: Chromium, axe-core, accname, contrast math (authoritative engines)
+verity/        Python: orchestration, adjudication, calibration, SARIF/VPAT/JUnit reports
+data/          WCAG criteria, APG interaction contracts, test fixtures
+eval/          Fault-injection harness + frozen accuracy baselines
+action/        GitHub Action wrapper
+docs/adr/      Architecture Decision Records
+```
+
+Each directory has its own `README.md`; the Node request flow is walked
+end-to-end in [`node-worker/ARCHITECTURE.md`](node-worker/ARCHITECTURE.md).
 
 ## Contributing
 
-[RUNNING.md](RUNNING.md) — install it and run a scan locally.
-[CONTRIBUTING.md](CONTRIBUTING.md) — the shared RPC contract and PR
-conventions.
+Issues and PRs welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) (the shared
+RPC contract and PR conventions) and [RUNNING.md](RUNNING.md). The one rule worth
+knowing up front: a change to what the worker can do touches **both**
+`node-worker/rpc/protocol.ts` and `verity/models/schemas.py` in the same PR —
+they're two views of one interface, and CI runs a cross-language contract check
+to keep them honest.
 
 ## License
 
