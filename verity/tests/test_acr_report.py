@@ -64,11 +64,11 @@ def test_waived_findings_do_not_count():
 
 def test_human_results_override_and_can_complete_the_report(tmp_path):
     manual_path = tmp_path / "manual.yaml"
-    manual_path.write_text("1.2.5:\n  value: Not Applicable\n  remarks: No video.\n  evaluator: N. Chunduri\n",
+    manual_path.write_text("1.2.5:\n  value: Not Applicable\n  remarks: No video.\n  evaluator: A. Evaluator\n",
                            encoding="utf-8")
     manual = load_manual(manual_path)
     acr = build_acr([R("p1")], product="Acme", manual=manual)
-    assert rows(acr)["1.2.5"].value == "Not Applicable" and "N. Chunduri" in rows(acr)["1.2.5"].remarks
+    assert rows(acr)["1.2.5"].value == "Not Applicable" and "A. Evaluator" in rows(acr)["1.2.5"].remarks
     everything = {r.sc: ManualResult("Supports", "Checked by hand.") for r in acr.rows}
     done = build_acr([R("p1")], product="Acme", manual=everything)
     assert done.complete and "DRAFT" not in render_markdown(done)

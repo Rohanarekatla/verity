@@ -2,7 +2,7 @@
 B12.2′ / B12.3′ — the pre-registered results tables and the cost model
 (Track B, Week 12).
 
-Rohan's dashboards (A12.2′, `results_store`) show success by cell and the raw
+The `results_store` dashboards show success by cell and the raw
 paired gap. This module produces the *confirmatory* tables
 `docs/agentbench/results-v1.md` must report, in the order and with the rules
 the pre-registration fixes:

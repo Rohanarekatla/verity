@@ -9,8 +9,7 @@ Implemented in Week 4 (A4.1–A4.3):
 
 - `traverse.ts` — `traverseTabOrder(page, opts)`: presses Tab, records each
   focus stop (selector, bbox, role, accessible name, **authored** tabindex,
-  dom order), detects keyboard traps over N cycles (N pinned by measurement in
-  `docs/measurements/keyboard-trap-cycles.md`), and classifies anything Tab
+  dom order), detects keyboard traps over N cycles (N pinned by measurement), and classifies anything Tab
   never reached — crucially marking roving-tabindex children `arrow-navigable`
   rather than as a barrier. `measureFocusVisible` adds the A4.3 focus-visible
   signal via a focused-vs-baseline computed-style diff.

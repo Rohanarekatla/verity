@@ -220,8 +220,6 @@ async def _adjudicate_incomplete_contrast(
 # every page — the criterion would be permanently needs-review and never a
 # real verdict. A4.3 was built to make it measurable, so we measure it.
 #
-# Agreed with Track A rather than assumed; see
-# docs/Developer-B/BC-A1-wire-keyboard-traversal.md.
 MEASURE_FOCUS_VISIBLE = True
 
 

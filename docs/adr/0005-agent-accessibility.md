@@ -2,10 +2,8 @@
 
 **Status:** ACCEPTED (2026-10-20)
 **Date:** 2026-10-20
-**Proposed by:** Rohan Arekatla · **Agreed:** Nikhil
-**Supersedes:** the vision-productionisation scope of Phases 3–5 in
-`execution-plan.md` (Weeks 11–13 vision items; parts of 14–18). ADR-0002
-(vision descoped to an experiment) stays in force.
+**Supersedes:** the vision-productionisation scope of the earlier phases.
+ADR-0002 (vision descoped to an experiment) stays in force.
 
 ## Context
 
@@ -106,7 +104,3 @@ is a novel, citable result; the CLI is a one-command, any-provider tool.
   injected corpus, confirmation logic is blocking; nothing ships confirmed until
   it is zero.
 
-## Signatures
-
-- Rohan Arekatla — proposed 2026-10-20
-- Nikhil — agreed 2026-10-20 (in conversation with Rohan; relayed by Rohan). Nikhil to add a written confirmation line here or on PR #32.

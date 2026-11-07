@@ -2,8 +2,6 @@
 
 **Status:** Accepted
 
-*Signed by Rohan Arekatla
-
 ## Context
 
 Verity needs two things that don't live in the same ecosystem:
@@ -87,6 +85,3 @@ no stack trace. Per-method timeouts (`ping` 5s, `render` 120s, `runAxe`
   corrupt the stream.
 - Truncated writes on process exit are a known failure mode with piped
   stdout — pending writes must be drained before `process.exit()`.
-
-Full write-up of the framing bug this surfaced during Week 1
-implementation: [`node-worker/A1.1-explained.md`](../../node-worker/A1.1-explained.md).

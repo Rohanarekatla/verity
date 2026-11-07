@@ -104,11 +104,9 @@ flag (ADR-0002). Licences: [`docs/licenses.md`](docs/licenses.md).
 
 ## Status
 
-All twenty weeks of the plan are built and tested (`uv run pytest` — 800+
-tests). The Agent Accessibility Benchmark is pre-registered
-(`docs/agentbench/preregistration.md`) and its runs are pending the pilot.
-Schedule and decisions: [`docs/execution-plan.md`](docs/execution-plan.md),
-[`docs/adr/`](docs/adr/).
+Actively developed. The scanner is stable and fully tested (`uv run pytest` —
+800+ tests); the agent-accessibility benchmark is experimental. Design
+decisions are recorded in [`docs/adr/`](docs/adr/).
 
 ## Layout
 
@@ -118,8 +116,8 @@ Schedule and decisions: [`docs/execution-plan.md`](docs/execution-plan.md),
 │   ├── rpc/               # JSON-RPC 2.0 over stdio: protocol, framing, dispatch, handlers
 │   ├── crawler/            # Chromium lifecycle, render → RenderArtifact, page handoff
 │   ├── static/             # axe-core, accname, geometry, contrast math (authoritative)
-│   ├── interaction/         # Keyboard vs APG contracts (Week 4)
-│   └── state_explorer/       # Bounded modal/menu/error states (Week 17)
+│   ├── interaction/         # Keyboard vs APG contracts
+│   └── state_explorer/       # Bounded modal/menu/error states
 ├── verity/                # Python: orchestration, models, ML agents, calibration, reports
 │   ├── models/            # Pydantic schemas — source of truth for types on both sides
 │   ├── orchestrator/       # Spawns/drives the Node worker; the scan pipeline
@@ -140,18 +138,12 @@ single request from stdin to stdout with diagrams and worked examples.
 
 ## How to work in this repo
 
-Two people, two languages, one repo, organised by directory.
+Two languages, one repo, organised by directory.
 
 | Side | Directories | Test command |
 |---|---|---|
 | **Node** — browser, protocol, CI surface | `node-worker/` | `cd node-worker && npm test` |
 | **Python** — orchestration, models, ML, eval | `verity/`, `eval/`, `data/`, `rulepacks/` | `uv run pytest verity/tests/` |
-
-**Ownership rotates every phase** — neither engineer stays in one lane.
-Current assignments and the rotation schedule are in
-[`docs/team-plan.md`](docs/team-plan.md). A PR into a lane you don't
-currently own gets reviewed by the person who does; that review is the
-point.
 
 You don't need the other side's toolchain installed to work on your
 own — Node isn't required to touch `verity/`, and Python isn't

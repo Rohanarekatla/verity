@@ -4,7 +4,7 @@ corpus hash.
 
 Week 7's gate: *on a page with 50 pre-existing findings, introducing one new
 defect fails the build on exactly that one.* Week 8's: *build fails only on
-**new authoritative** findings.* Rohan's A7.2 (`verity.report.baseline`) is
+**new authoritative** findings.* The baseline module (`verity.report.baseline`) is
 the store and the diff; this module is the decision the CLI makes with it.
 
 **What the key means.** A regression is "a finding that is not in the accepted

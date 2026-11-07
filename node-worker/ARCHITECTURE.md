@@ -6,9 +6,7 @@ raw bytes on stdin → a JSON-RPC frame on stdout.
 Read it with the code open. Each stage names its file.
 
 - Design rationale (why stdio, why newline framing, the bugs this
-  shape avoids): [`A1.1-explained.md`](A1.1-explained.md) and
-  [ADR-0001](../docs/adr/0001-polyglot-json-rpc-over-stdio.md)
-- Schedule and task ids: [`docs/execution-plan.md`](../docs/execution-plan.md)
+  shape avoids): [ADR-0001](../docs/adr/0001-polyglot-json-rpc-over-stdio.md)
 
 ---
 
@@ -141,7 +139,7 @@ The three calls a real audit makes. Run it yourself:
 
 Paths cross the wire, never contents. A DOM dump is hundreds of
 kilobytes; putting it in a frame is exactly the payload size that
-exposed the truncated-write bug described in `A1.1-explained.md`.
+exposed the truncated-write bug.
 
 Field names are snake_case on purpose — they mirror
 `verity.models.schemas.RenderArtifact` field for field. That Pydantic

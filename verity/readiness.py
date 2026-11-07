@@ -5,8 +5,8 @@ B14.2′ — the agent-readiness score (Track B, Week 14).
 point**, never a vibe. Two halves:
 
 **Static** — from one render's accessibility tree (the interface tree-based
-agents use: Playwright MCP, ChatGPT Atlas) plus Verity's findings and Rohan's
-WebMCP readiness (A16.1′):
+agents use: Playwright MCP, ChatGPT Atlas) plus Verity's findings and the
+WebMCP readiness checks:
 
 | Point | Max | Earned from |
 |---|--:|---|

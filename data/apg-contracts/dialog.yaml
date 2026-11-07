@@ -4,7 +4,7 @@
 # Written by hand from the WAI-ARIA Authoring Practices "Dialog (Modal)"
 # pattern and the ARIA 1.2 `dialog` / `alertdialog` / `aria-modal` /
 # `aria-haspopup` definitions, before the checks in
-# verity/agents/interaction.py. Cross-check against A at the pair session.
+# verity/agents/interaction.py.
 #
 # ---------------------------------------------------------------------------
 # The point of this file

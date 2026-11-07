@@ -2,9 +2,8 @@
 #
 # Week 4 required artifact, Track B half. Written by hand from the WAI-ARIA
 # Authoring Practices tabs pattern and the ARIA 1.2 role definitions, before
-# any runner code, per the execution plan.
+# any runner code.
 #
-# Engineer A writes an independent version; we compare at the pair session.
 # Where they differ is the useful part — a divergence here means we do not
 # agree on what "correct" looks like, and a checker built on the wrong idea of
 # correct is worse than no checker.
@@ -191,7 +190,7 @@ not_asserted:
   - "nested tablists — out of scope for version 1 of this contract"
 
 # ---------------------------------------------------------------------------
-# Reference implementations to validate against at the pair session.
+# Reference implementations to validate against.
 # Every one of these must produce ZERO findings. Any that does not is a bug
 # in our checker, not in the widget.
 # ---------------------------------------------------------------------------

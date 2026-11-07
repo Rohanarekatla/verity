@@ -38,8 +38,7 @@ BOUNDARY_MODELS = [
     RenderArtifact,
     # sampleRegion() -> RegionSample (A3.4)
     RegionSample,
-    # tab-order traversal -> TraversalResult (A4.1, A4.2) — proposed, see
-    # docs/Developer-A/week-4-action-items.md
+    # tab-order traversal -> TraversalResult (A4.1, A4.2)
     TraversalResult,
     # inventoryWidgets() -> WidgetInventory (A9.2)
     WidgetInventory,

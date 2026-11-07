@@ -1,7 +1,6 @@
 """
-Track A leftovers finished on Track B's side (2026-10-30, Rohan out of usage):
-the keyboard/focus defect family for H3 and its verification, and the
-ruleset fingerprint that keeps the findings cache from serving stale results.
+Keyboard/focus defect family for H3 and its verification, and the ruleset
+fingerprint that keeps the findings cache from serving stale results.
 """
 
 import shutil

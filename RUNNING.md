@@ -193,10 +193,6 @@ the conformance report and logged instead — they're real observations,
 but they are not WCAG conformance failures, and reporting them as such
 would be a false positive.
 
-Not built yet: contrast-over-image adjudication, keyboard/APG testing,
-the vision agents, calibration, waivers, SARIF output, and the GitHub
-Action. See [`docs/execution-plan.md`](docs/execution-plan.md).
-
 ## How it works
 
 [`node-worker/ARCHITECTURE.md`](node-worker/ARCHITECTURE.md) — every

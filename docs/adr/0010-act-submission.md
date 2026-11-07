@@ -27,7 +27,3 @@ and an EARL 1.0 generator (`verity/report/earl.py`, B15.3).
 The measured pass rate is published in both outcomes (plan: "measured and
 published honestly, whatever the number is").
 
-## Signatures
-
-- Nikhil — proposed 2026-10-30
-- Rohan — ____

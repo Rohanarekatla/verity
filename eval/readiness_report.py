@@ -6,7 +6,7 @@ measured, with the evidence published. Three stages, each resumable, each
 writing JSON lines so a stopped run continues instead of starting over:
 
 1. **Readiness scan** (B17.1′, deterministic, cheap) — every site in a list:
-   a bounded crawl (Rohan's `crawl_site`: page/depth/time budget, same-origin,
+   a bounded crawl (`crawl_site`: page/depth/time budget, same-origin,
    render_failed pages listed not fatal), and per page Verity's scan plus the
    agent-readiness points (B14.2′).
 

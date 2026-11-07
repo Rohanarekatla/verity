@@ -12,7 +12,6 @@ have appeared as "the annotations don't show up" on a real PR. See
 **"What this surfaced"** below; that section is the actual point of the
 exercise.
 
-Engineer A writes an independent version; we compare at the pair session.
 
 ---
 
@@ -146,7 +145,7 @@ rather than pretend:
 | A URL served by a dev server from known sources | Only with a URL→source map the user supplies. Not in scope this week. |
 | An arbitrary remote URL | **No.** Emit the result with no `physicalLocation`; it appears in the Security tab with the selector in the message. |
 
-**This is a decision for the pair session, not something to quietly pick.**
+**This is a deliberate configuration decision, not something to quietly pick.**
 It directly shapes A8.1: whether the GitHub Action scans built files from the
 checkout (annotatable) or a deployed preview URL (not annotatable) changes
 what the headline feature of Week 8 actually is.

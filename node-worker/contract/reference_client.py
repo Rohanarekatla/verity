@@ -2,7 +2,7 @@
 Reference client for the Verity Node worker — CONTRACT DEMONSTRATION ONLY.
 
 This is not B1.2. It is the smallest possible thing that proves the contract is
-real, so Engineer B can see the exact wire behaviour rather than reading a
+real, so you can see the exact wire behaviour rather than reading a
 description of it: a real render() against a local fixture, runAxe() against
 the page it produced, and the resulting authoritative contrast finding. The
 production client (verity/orchestrator/rpc_client.py) needs correlation by

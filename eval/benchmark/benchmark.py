@@ -1,7 +1,7 @@
 """
 Verity vs axe-core, Lighthouse, Pa11y and IBM Equal Access — scored against ground truth.
 
-BC-C2 in docs/execution-plan.md: "a reproducible, honest benchmark". Every
+A reproducible, honest benchmark. Every
 tool runs on the same pages, served over HTTP (Lighthouse refuses file://),
 and every finding is resolved to the real DOM element it names (CSS selector
 or XPath) before it is credited. Only findings on the criterion under test

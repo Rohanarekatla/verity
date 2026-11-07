@@ -498,7 +498,7 @@ async def test_aria_activedescendant_counts_as_focus_on_the_item():
         assert r[aid].outcome == "pass", (aid, r[aid].detail)
 
 
-# --- Nikhil's condition (e2e-hardening-reply.md): APG_ONLY only when the WCAG
+# --- Condition: APG_ONLY only when the WCAG
 # requirement behind it is independently met ----------------------------------
 
 def tab_snaps(start: str, after_next: str) -> list[InteractionSnapshot]:

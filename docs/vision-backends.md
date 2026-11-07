@@ -51,8 +51,7 @@ uv run python -m eval.vision.measure
 ```
 
 Results land in `eval/vision/results.json`; record the headline numbers and
-the hardware (cold-load seconds, tokens/sec, peak memory) into
-[`docs/measurements/spike-a.md`](measurements/spike-a.md).
+the hardware (cold-load seconds, tokens/sec, peak memory) with the results.
 
 **16 GB caveat (measure, don't assume):** an 8B VL model at Q4 is ~8–12 GB;
 the research brief recommends 32 GB for comfort. On 16 GB it should run
@@ -84,5 +83,5 @@ machine, which crosses two hard project lines: the *self-hostable, no-cloud*
 constraint that is the differentiator vs. Evinced, and the prompt-injection
 threat model (Verity ingests arbitrary web pages). Acceptable as a one-off to
 get a Spike A number if this Mac genuinely can't; not acceptable as the
-shipped architecture. Either way it needs Nikhil's sign-off and an ADR,
+shipped architecture. Either way it needs sign-off and an ADR,
 because it changes the project's positioning — it is not a unilateral swap.

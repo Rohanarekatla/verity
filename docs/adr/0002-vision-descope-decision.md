@@ -1,13 +1,11 @@
 # ADR-0002: Spike A — whether Vision stays in scope
 
 **Status:** ACCEPTED
-**Date:** 2026-10-18 (Context 30/08/2026; Decision written after the Spike A run, signed off late)
-**Signed:** Nikhil (proposed / authored Context) / Rohan Arekatla (agreed 2026-10-18)
+**Date:** 2026-10-18 (Context written earlier; Decision written after the Spike A run)
 
-> The Context was written in Week 2; the Decision could not be until the corpus
-> had run against a wired model. It has now (see
-> [`../measurements/spike-a.md`](../measurements/spike-a.md)), so the Decision
-> below is written against real numbers, not a prediction.
+> The Context was written early; the Decision could not be until the corpus
+> had run against a wired model. It has now, so the Decision below is written
+> against real numbers, not a prediction.
 
 ---
 
@@ -24,7 +22,7 @@ feature that quietly fabricates is worse than not shipping one.
 
 ### What was built
 
-**Track B (Nikhil)** — three judgments, each a Pydantic schema for
+**Track B** — three judgments, each a Pydantic schema for
 constrained decoding plus a rubric used as the system prompt:
 
 | Task | Judgment | Schema | Rubric |
@@ -38,7 +36,7 @@ only and has no field in which a contrast ratio could be reported.
 
 B2.5 records end-to-end latency into `AuditReport.latency`.
 
-**Track A (Rohan)** — element-level screenshot capture with boxes in CSS and
+**Track A** — element-level screenshot capture with boxes in CSS and
 device pixels (A2.1, A2.2), and the Spike A corpus harness (A2.3).
 
 ### Constraints discovered during the week
@@ -57,7 +55,7 @@ carries forward to Week 4.
 117 are confirmed detected and therefore scoreable. Split across two
 measurable judgments, that is roughly 50–60 cases each — which is why the
 proposed bar is stated as a confidence-interval lower bound rather than a
-point estimate. See [`../measurements/precision-bar.md`](../measurements/precision-bar.md).
+point estimate.
 
 **3. Precision alone is gameable.** A model that always abstains scores 100%
 precision on zero findings. The bar therefore pairs a precision floor with an
@@ -68,8 +66,7 @@ CI" is quietly false, regardless of how accurate the findings are.
 
 ### The bar
 
-Agreed and written down before results existed:
-[`../measurements/precision-bar.md`](../measurements/precision-bar.md).
+Agreed and written down before results existed.
 
 ---
 
@@ -94,7 +91,7 @@ Two measured caveats keep this from being a verdict on vision in general, and
 both are recorded rather than buried:
 
 - The run used a **7B-4bit proxy on an M4/16 GB, not the specified 8B build**
-  (Engineer B's compute constraint — see the mlx-vlm backend work). A stronger
+  (a compute constraint — see the mlx-vlm backend work). A stronger
   model may abstain less.
 - **Two of three judgments were unmeasurable this week.** Focus-visible (B2.3)
   had no focused screenshot to score until A4.3 landed — which it now has, so
@@ -107,7 +104,7 @@ off until vision is re-measured against the bar on (a) the intended model and
 report depends on a model — consistent with ADR-0003.
 
 _Result against the bar (alt-text, B2.2; measured 2026-08-18, 7B-4bit
-stand-in on M4/16 GB — see [`../measurements/spike-a.md`](../measurements/spike-a.md)):_
+stand-in on M4/16 GB):_
 
 | Measure | Bar | Actual | Met? |
 |---|---|---|---|
@@ -171,14 +168,3 @@ above is from a 7B-4bit proxy, not the specified 8B build.
   Week 12's kill criterion is where "cut entirely" gets decided on bounded-FP
   evidence.
 
----
-
-## Rohan's sign-off note
-
-Agreed. I'd have been uncomfortable signing "stays in scope" on these numbers,
-and equally uncomfortable with "cut entirely" while B2.3 was literally
-unmeasurable — which was partly my gap, since the focused-screenshot capture
-(A4.3) didn't exist until Week 4. "Descoped to experiment, gated on a re-run"
-is the reading I can defend: it's honest about the failure, it doesn't throw
-away the measurement, and it ties the comeback to a concrete, now-satisfiable
-precondition rather than to optimism.
