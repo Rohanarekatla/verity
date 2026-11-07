@@ -46,6 +46,27 @@ inputs:
       normal gating run.
     required: false
     default: ""
+  # S20.2 / plan v2 — `verity agent-check` in CI (A14.1′ + B14.1′ confirmation).
+  agent-task:
+    description: >
+      Optional. A task for an AI agent to attempt on the scan target through
+      the accessibility tree (e.g. "Add the first product to the cart").
+      Unconfirmed agent failures annotate as notes; a failure Verity confirms
+      deterministically gates like any authoritative finding.
+    required: false
+    default: ""
+  agent-success:
+    description: "Optional deterministic success spec (YAML/JSON) for agent-task."
+    required: false
+    default: ""
+  agent-model:
+    description: "Provider spec for the agent, e.g. anthropic:claude-haiku-5-5 (its API key must be in env) or ollama:…"
+    required: false
+    default: "anthropic:claude-haiku-5-5"
+  agent-sarif-file:
+    description: "Where to write the agent-check SARIF."
+    required: false
+    default: "verity-agent.sarif"
 
 runs:
   using: "composite"
@@ -149,6 +170,30 @@ runs:
           ${{ inputs.write-baseline && format('--write-baseline {0}', inputs.write-baseline) || '' }}
         echo "exit_code=$?" >> "$GITHUB_OUTPUT"
 
+    - name: Run Verity agent-check
+      id: agent
+      if: ${{ inputs.agent-task != '' && inputs.write-baseline == '' }}
+      shell: bash
+      working-directory: ${{ github.action_path }}/..
+      env:
+        AGENT_SUCCESS: ${{ inputs.agent-success }}
+      run: |
+        set +e
+        uv run playwright install --with-deps chromium
+        extra=()
+        if [ -n "$AGENT_SUCCESS" ]; then extra=(--success "$AGENT_SUCCESS"); fi
+        uv run python -m verity.cli agent-check "${{ steps.target.outputs.scan_target }}" \
+          --task "${{ inputs.agent-task }}" --model "${{ inputs.agent-model }}" --confirm \
+          --sarif "${{ inputs.agent-sarif-file }}" "${extra[@]}"
+        echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+    - name: Upload agent-check SARIF
+      if: ${{ inputs.agent-task != '' && inputs.upload-sarif == 'true' && inputs.write-baseline == '' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ github.action_path }}/../${{ inputs.agent-sarif-file }}
+        category: verity-agent-check
+
     - name: Upload SARIF to code scanning
       if: ${{ inputs.upload-sarif == 'true' && inputs.write-baseline == '' }}
       uses: github/codeql-action/upload-sarif@v3
@@ -164,6 +209,11 @@ runs:
           exit 0
         fi
         code="${{ steps.scan.outputs.exit_code }}"
+        agent="${{ steps.agent.outputs.exit_code }}"
+        if [ "$agent" = "1" ]; then
+          echo "::error::Verity confirmed an accessibility defect that stopped the agent's task."
+          exit 1
+        fi
         if [ "$code" = "1" ]; then
           echo "::error::Verity found gating accessibility findings."
           exit 1

@@ -56,14 +56,23 @@ hypothesis is reported as **not tested**, never dropped silently.
 
 ## 4. Defects (fixed at signing)
 
-| Family | Defect id (`eval/inject`) | Used in |
-|---|---|---|
-| name | `strip_accessible_name` (empty button / link) | H1, H2, H4 |
-| name | `click_only_widget` (div-as-button) | H1, H2, H4 |
-| name | `detach_label` (missing form label) | H1, H2, H4 |
-| keyboard | `keyboard_trap` | H3, H4 |
-| keyboard | `remove_from_tab_order` | H3, H4 |
-| focus | `outline_none` | H3, H4 |
+Ids are the runtime defects the runner injects (`eval/agentbench/defects.js`,
+A10.5), which mirror the static injectors in `eval/inject`. *(Revised
+2026-10-30, before signing: the draft used the static injector names.)*
+
+| Family | Defect id (runtime) | Static twin (`eval/inject`) | Used in |
+|---|---|---|---|
+| name | `strip_name` (empty button / link) | `aria_misuse.strip_accessible_name` | H1, H2, H4 |
+| name | `div_button` (div-as-button) | `aria_misuse.click_only_widget` | H1, H2, H4 |
+| name | `detach_label` (missing form label) | `detach_label` | H1, H2, H4 |
+| keyboard | `keyboard_trap` | `keyboard_trap` | H3, H4 |
+| keyboard | `remove_from_tab_order` | `aria_misuse.remove_from_tab_order` | H3, H4 |
+| focus | `outline_none` | `outline_none` | H3, H4 |
+
+The three keyboard/focus defects need runtime versions in `defects.js` and
+their expected effect in `verify_injection.py` (Track A). If they are not in
+the runner when this document is signed, **H3 is reported as not tested** —
+the table above is not edited to make it look tested.
 
 Prevalence context (WebAIM Million 2026): low contrast 83.9%, missing alt
 53.1%, missing labels 51%, empty links 46.3%, empty buttons 30.6%. Contrast is

@@ -152,11 +152,35 @@ async def run_cli_scan(
     config_path: Optional[str] = None,
     write_baseline_path: Optional[str] = None,
     baseline_path: Optional[str] = None,
+    trace_path: Optional[str] = None,
+    earl_path: Optional[str] = None,
+    rules_dir: Optional[str] = None,
 ) -> int:
     """Runs the scan orchestrator and saves/prints output."""
+    from verity.observability import ScanTrace, render_coverage
     from verity.report.policy import load_policy
     from verity.report.regression import gate_against_baseline, open_baseline
 
+    # B13.3 — every scan is traced, so the report can say what it did NOT
+    # check; `--trace` additionally writes verity-trace.json.
+    trace = ScanTrace()
+    try:
+        return await _run_cli_scan(url, output_path, timeout, worker_cmd, sarif_path, junit_path, config_path,
+                                   write_baseline_path, baseline_path, trace, load_policy,
+                                   gate_against_baseline, open_baseline, render_coverage, earl_path,
+                                   rules_dir)
+    finally:
+        if trace_path:
+            try:
+                written = trace.finish().write(Path(trace_path))
+                logger.info("Trace written to %s", written)
+            except OSError as exc:
+                logger.warning("Could not write the trace to %s: %s", trace_path, exc)
+
+
+async def _run_cli_scan(url, output_path, timeout, worker_cmd, sarif_path, junit_path, config_path,
+                        write_baseline_path, baseline_path, trace, load_policy, gate_against_baseline,
+                        open_baseline, render_coverage, earl_path=None, rules_dir=None) -> int:
     try:
         # B8.4 — the gating policy is loaded before the scan, so a bad `ci:`
         # block fails immediately rather than after a 30-second render.
@@ -170,11 +194,28 @@ async def run_cli_scan(
         url = normalize_target(url)
         logger.info(f"Starting scan for URL: {url}")
         report: AuditReport = await scan_url(
-            url=url, node_worker_command=worker_cmd, timeout=timeout
+            url=url, node_worker_command=worker_cmd, timeout=timeout, trace=trace
         )
 
-        # Print human-readable summary
+        # S19.6 — community rule packs: fixture-gated, sandboxed, never gating.
+        if rules_dir:
+            from verity.orchestrator.main import build_conformance_map
+            from verity.plugins import findings_for, load_packs
+
+            packs, problems = load_packs(Path(rules_dir))
+            for problem in problems:
+                logger.warning("Rule pack not loaded: %s", problem)
+            dom = trace.artifacts.get("dom_path")
+            if packs and dom and Path(dom).exists():
+                extra = findings_for(packs, Path(dom).read_text(encoding="utf-8", errors="replace"),
+                                     page_state_hash=trace.artifacts.get("content_hash", ""))
+                report.findings.extend(extra)
+                report.conformance = build_conformance_map(report.findings)
+                logger.info("%d community rule pack(s): %d finding(s), all needs-review.", len(packs), len(extra))
+
+        # Print human-readable summary, then what was and was not checked.
         print_report_summary(report)
+        print(render_coverage(trace))
 
         # Save to JSON file if requested
         if output_path:
@@ -206,6 +247,12 @@ async def run_cli_scan(
 
             written = write_junit(report, junit_path, policy=policy)
             logger.info(f"JUnit XML written to: {written.resolve()}")
+
+        # B15.3 — EARL 1.0 JSON-LD (the ACT implementation-report format).
+        if earl_path:
+            from verity.report.earl import write_earl
+
+            logger.info("EARL written to: %s", write_earl(report, earl_path).resolve())
 
         # A7.2 / A8.3 — record the current findings as a baseline. This is how
         # the baseline-commit workflow regenerates the file it proposes in a
@@ -291,6 +338,7 @@ def run_agent_check_cli(
     html_path: Optional[str] = None,
     config_path: Optional[str] = None,
     headless: bool = True,
+    confirm: bool = False,
 ) -> int:
     """
     A14.1′/A14.2′ — run `verity agent-check`.
@@ -329,7 +377,15 @@ def run_agent_check_cli(
         target = normalize_target(url)
         logger.info("Agent-check: %r on %s via %s", task, target, model_spec)
         with WebEnv(target, goal=task, headless=headless) as env:
-            result = agent_check(target, task, agent=agent, env=env, success_fn=success_fn)
+            # B14.1′ — deterministic confirmation on the live page, opt-in
+            # until the Week-14 gate (zero wrong confirmations) is measured.
+            if confirm:
+                from verity.agent_check.confirm import make_confirm_fn
+
+                result = agent_check(target, task, agent=agent, env=env, success_fn=success_fn,
+                                     confirm_fn=make_confirm_fn(env))
+            else:
+                result = agent_check(target, task, agent=agent, env=env, success_fn=success_fn)
 
         # Gating respects the loaded policy's `fail_on` (agent-check findings are
         # needs-review, so they do not gate); annotation is widened to
@@ -369,6 +425,55 @@ def run_agent_check_cli(
             "Agent-check failed: %s. No verdict was reached (exit %d).",
             exc or exc.__class__.__name__, EXIT_SCAN_ERROR,
         )
+        return EXIT_SCAN_ERROR
+
+
+def run_acr_cli(reports: list[str], *, product: str, manual: Optional[str] = None, aaa: bool = False,
+                out: Optional[str] = None, html_out: Optional[str] = None) -> int:
+    """B16.1/B16.2 — `verity acr`: an honest VPAT 2.5 (WCAG 2.2) ACR from saved scan reports."""
+    from verity.acr import build_acr, load_manual, render_html, render_markdown
+
+    try:
+        loaded = [AuditReport.model_validate_json(Path(p).read_text(encoding="utf-8")) for p in reports]
+        acr = build_acr(loaded, product=product, manual=load_manual(Path(manual) if manual else None),
+                        levels=("A", "AA", "AAA") if aaa else ("A", "AA"))
+        text = render_markdown(acr)
+        if out:
+            Path(out).parent.mkdir(parents=True, exist_ok=True)
+            Path(out).write_text(text, encoding="utf-8")
+        if html_out:
+            Path(html_out).parent.mkdir(parents=True, exist_ok=True)
+            Path(html_out).write_text(render_html(acr), encoding="utf-8")
+        print(text if not out else f"ACR written to {out} ({'complete' if acr.complete else 'DRAFT: '}"
+                                   f"{'' if acr.complete else str(len(acr.unevaluated)) + ' rows need a human'})")
+        return EXIT_OK
+    except Exception as exc:
+        logger.error("ACR failed: %s (exit %d).", exc or exc.__class__.__name__, EXIT_SCAN_ERROR)
+        return EXIT_SCAN_ERROR
+
+
+def run_readiness_cli(target: str, *, timeout: float = DEFAULT_TIMEOUT_S, stability: bool = False,
+                      json_path: Optional[str] = None, md_path: Optional[str] = None) -> int:
+    """B14.2′ — `verity readiness`: the agent-readiness score, with evidence per point."""
+    import dataclasses
+
+    from verity.readiness import readiness_for, render_markdown
+
+    try:
+        url = normalize_target(target)
+        report = asyncio.run(readiness_for(url, timeout=timeout, stability=stability))
+        text = render_markdown(report, target=url)
+        print(text)
+        if md_path:
+            Path(md_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(md_path).write_text(text, encoding="utf-8")
+        if json_path:
+            Path(json_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(json_path).write_text(json.dumps(dataclasses.asdict(report), indent=2, default=str),
+                                       encoding="utf-8")
+        return EXIT_OK
+    except Exception as exc:
+        logger.error("Readiness failed: %s (exit %d).", exc or exc.__class__.__name__, EXIT_SCAN_ERROR)
         return EXIT_SCAN_ERROR
 
 
@@ -526,6 +631,18 @@ def main() -> None:
         metavar="PATH",
         help="Fail only on findings absent from this baseline (see --write-baseline)",
     )
+    # B13.3 — verity-trace.json: per-stage timing, coverage, what was not checked.
+    scan_parser.add_argument(
+        "--trace",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="Write verity-trace.json (stage timings and exactly what was not checked)",
+    )
+    scan_parser.add_argument("--rules", type=str, default=None, metavar="DIR",
+                             help="Apply community rule packs from DIR (fixture-gated; findings never gate)")
+    scan_parser.add_argument("--earl", type=str, default=None, metavar="PATH",
+                             help="Write an EARL 1.0 JSON-LD report (ACT implementation-report format)")
 
     # 'agent-check' command (A14.1′/A14.2′) — does an AI agent complete a task?
     ac = subparsers.add_parser(
@@ -548,6 +665,32 @@ def main() -> None:
     ac.add_argument("-c", "--config", type=str, default=None, metavar="PATH",
                     help="Config file with a `ci: { fail_on, annotate_on }` block")
     ac.add_argument("--headed", action="store_true", help="Show the browser (debugging)")
+    ac.add_argument("--confirm", action="store_true",
+                    help="Confirm a localised failure with Verity's deterministic checks on the live page "
+                         "(B14.1′); a confirmed failure is authoritative and can gate")
+
+    # 'rules' command (S19.5/S19.6) — verify community rule packs against their fixtures.
+    rules = subparsers.add_parser("rules", help="Community rule packs")
+    rules_sub = rules.add_subparsers(dest="rules_cmd", required=True)
+    rv = rules_sub.add_parser("verify", help="Run every pack against its mandatory pass/fail fixtures")
+    rv.add_argument("directory", nargs="?", default="rulepacks")
+
+    # 'acr' command (B16.1/B16.2) — VPAT 2.5 ACR from saved scan reports.
+    acr = subparsers.add_parser("acr", help="Build an Accessibility Conformance Report (VPAT 2.5, WCAG 2.2)")
+    acr.add_argument("reports", nargs="+", help="AuditReport JSON files from `verity scan -o`")
+    acr.add_argument("--product", required=True)
+    acr.add_argument("--manual", default=None, metavar="YAML", help="Human evaluation results per criterion")
+    acr.add_argument("--aaa", action="store_true", help="Include Level AAA rows")
+    acr.add_argument("--out", default=None, metavar="PATH", help="Markdown output")
+    acr.add_argument("--html", default=None, metavar="PATH", help="HTML output")
+
+    # 'readiness' command (B14.2′) — agent-readiness score with evidence.
+    rd = subparsers.add_parser("readiness", help="Score how ready a page is for AI agents, with evidence")
+    rd.add_argument("target", type=str, help="Target URL or local HTML file")
+    rd.add_argument("--stability", action="store_true", help="Render twice and compare controls (slower)")
+    rd.add_argument("-t", "--timeout", type=float, default=DEFAULT_TIMEOUT_S)
+    rd.add_argument("--json", type=str, default=None, metavar="PATH")
+    rd.add_argument("--md", type=str, default=None, metavar="PATH")
 
     # 'mcp' command (A15.1′) — expose Verity's checks as MCP tools over stdio.
     subparsers.add_parser(
@@ -568,6 +711,21 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    if args.command == "rules":
+        from verity.plugins import load_packs
+
+        packs, problems = load_packs(Path(args.directory))
+        for pack in packs:
+            print(f"OK    {pack.id} ({'python' if pack.script else 'declarative'}, SC {pack.sc})")
+        for problem in problems:
+            print(f"FAIL  {problem}")
+        sys.exit(1 if problems else 0)
+    if args.command == "acr":
+        sys.exit(run_acr_cli(args.reports, product=args.product, manual=args.manual, aaa=args.aaa,
+                             out=args.out, html_out=args.html))
+    if args.command == "readiness":
+        sys.exit(run_readiness_cli(args.target, timeout=args.timeout, stability=args.stability,
+                                   json_path=args.json, md_path=args.md))
     if args.command == "webmcp":
         sys.exit(run_webmcp_cli(args.target, generate=args.generate,
                                 json_path=args.json, strict=args.strict))
@@ -579,7 +737,7 @@ def main() -> None:
         sys.exit(run_agent_check_cli(
             url=args.url, task=args.task, success=args.success, model_spec=args.model,
             json_path=args.json, sarif_path=args.sarif, html_path=args.html,
-            config_path=args.config, headless=not args.headed,
+            config_path=args.config, headless=not args.headed, confirm=args.confirm,
         ))
     elif args.command == "scan":
         worker_cmd_list = args.worker_cmd.split() if args.worker_cmd else None
@@ -594,6 +752,9 @@ def main() -> None:
                 config_path=args.config,
                 write_baseline_path=args.write_baseline,
                 baseline_path=args.baseline,
+                trace_path=args.trace,
+                earl_path=args.earl,
+                rules_dir=args.rules,
             )
         )
         sys.exit(exit_code)

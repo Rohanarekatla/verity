@@ -1,0 +1,23 @@
+{
+  "_comment": "Week 15 artifact: one EARL assertion written by hand BEFORE verity/report/earl.py generated any. The generator's output for the same finding must match this shape (verity/tests/test_week15_track_b.py).",
+  "@context": {
+    "earl": "http://www.w3.org/ns/earl#",
+    "dct": "http://purl.org/dc/terms/",
+    "foaf": "http://xmlns.com/foaf/0.1/",
+    "ptr": "http://www.w3.org/2009/pointers#",
+    "WCAG22": "https://www.w3.org/TR/WCAG22/#",
+    "@vocab": "http://www.w3.org/ns/earl#"
+  },
+  "@type": "Assertion",
+  "assertedBy": {"@id": "https://github.com/Rohanarekatla/verity", "@type": ["earl:Assertor", "earl:Software"], "dct:title": "Verity", "dct:hasVersion": "0.1.0"},
+  "subject": {"@type": ["earl:TestSubject", "sch:WebPage"], "dct:source": "https://example.com/checkout"},
+  "test": {"@id": "WCAG22:contrast-minimum", "@type": "earl:TestRequirement", "dct:title": "1.4.3 Contrast (Minimum)"},
+  "mode": "earl:automatic",
+  "result": {
+    "@type": "earl:TestResult",
+    "outcome": "earl:failed",
+    "description": "Text over the hero image has a worst-case contrast of 2.9:1 against the required 4.5:1 (measured from rendered pixels).",
+    "pointer": {"@type": "ptr:CSSSelectorPointer", "ptr:expression": "#hero h1"},
+    "dct:date": "2026-12-01T10:00:00Z"
+  }
+}

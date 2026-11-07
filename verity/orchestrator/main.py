@@ -27,6 +27,7 @@ from verity.models.schemas import (
     TraversalResult,
 )
 from verity.orchestrator.rpc_client import RPCClient
+from verity import observability as obs
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +187,9 @@ async def _adjudicate_incomplete_contrast(
     nothing", and "we learned nothing" is `cantTell`.
     """
     selector = finding.evidence.dom_selector
+    obs.count("contrast", "regions")
     if not selector:
+        obs.count("contrast", "left_for_review")
         return flag_needs_review(finding)
 
     try:
@@ -200,9 +203,13 @@ async def _adjudicate_incomplete_contrast(
             selector,
             exc.__class__.__name__,
         )
+        obs.count("contrast", "left_for_review")
+        obs.degrade("contrast", f"sampleRegion unavailable ({exc.__class__.__name__})")
         return flag_needs_review(finding)
 
-    return adjudicate_contrast(finding, sample)
+    result = adjudicate_contrast(finding, sample)
+    obs.count("contrast", "left_for_review" if result.outcome == "cantTell" else "decided")
+    return result
 
 
 # BC-A1 — measure the focus indicator during traversal.
@@ -250,7 +257,14 @@ async def _run_keyboard_traversal(
                 "measureFocusVisible": MEASURE_FOCUS_VISIBLE,
             },
         )
-        return TraversalResult.model_validate(raw)
+        result = TraversalResult.model_validate(raw)
+        # B13.3: what this traversal could not see, for the coverage section.
+        # Arrow-navigable and not-focusable regions are understood, not gaps;
+        # shadow roots, iframes, obscured and unknown ones were not checked.
+        gaps = [u for u in result.unreached
+                if getattr(u.reason, "value", u.reason) in ("shadow-dom", "iframe", "obscured", "unknown")]
+        obs.note("keyboard", stops=len(result.stops), unreached=len(gaps), incomplete=not result.complete)
+        return result
 
     try:
         # resolve_with_retries owns B4.2 (three-state outcome) and B4.4
@@ -264,7 +278,10 @@ async def _run_keyboard_traversal(
             "Keyboard traversal unavailable (%s); no keyboard findings this run.",
             exc.__class__.__name__,
         )
+        obs.degrade("keyboard", f"traversal unavailable ({exc.__class__.__name__}); nothing was checked")
         return []
+
+    obs.note("keyboard", attempts=attempts)
 
     logger.info(
         "Keyboard traversal produced %d finding(s) in %d attempt(s).",
@@ -300,7 +317,15 @@ async def _run_apg_contracts(
             "APG contract run unavailable (%s); no interaction findings this run.",
             exc.__class__.__name__,
         )
+        obs.degrade("contracts", f"contract run unavailable ({exc.__class__.__name__}); nothing was checked")
         return []
+
+    # Coverage counts are read defensively: they describe the run for the
+    # coverage section and must never be the reason a scan fails.
+    obs.note("contracts", widgets_matched=sum((getattr(run, "widgets_matched", None) or {}).values()),
+             shadow_roots_skipped=getattr(run, "shadow_roots_skipped", 0),
+             iframes_skipped=getattr(run, "iframes_skipped", 0),
+             widgets_skipped=len(getattr(run, "widgets_skipped", None) or []))
 
     # Mapping is guarded separately, and more loudly, than the worker call.
     #
@@ -324,6 +349,8 @@ async def _run_apg_contracts(
             exc.__class__.__name__,
             exc,
         )
+        obs.degrade("contracts", f"results could not be mapped ({exc.__class__.__name__}) — a Verity bug; "
+                                 "interaction findings dropped")
         return []
 
     logger.info(
@@ -362,6 +389,7 @@ async def scan_url(
     url: str,
     node_worker_command: Optional[list[str]] = None,
     timeout: float = 30.0,
+    trace: Optional[obs.ScanTrace] = None,
 ) -> AuditReport:
     """
     Main orchestrator entry point to run a full accessibility scan on a single URL.
@@ -388,7 +416,13 @@ async def scan_url(
         node_worker_command = ["node", str(worker)]
 
     scan_start_time = time.perf_counter()
+    if trace is not None:
+        trace.target = url
+    with obs.activate(trace):
+        return await _scan(url, node_worker_command, timeout, scan_start_time)
 
+
+async def _scan(url: str, node_worker_command: list[str], timeout: float, scan_start_time: float) -> AuditReport:
     client = RPCClient(command=node_worker_command, default_timeout=timeout)
     rpc_call = getattr(client, "call", client.send_request)
     artifact_id = None
@@ -399,8 +433,15 @@ async def scan_url(
         # Step 1: Request Page Render from Node worker
         logger.info(f"Requesting render for: {url}")
         render_start = time.perf_counter()
-        render_result = await rpc_call("render", {"url": url})
+        try:
+            with obs.timed("render"):
+                render_result = await rpc_call("render", {"url": url})
+        except Exception as exc:
+            obs.degrade("render", f"render failed ({exc.__class__.__name__}); nothing on this page was checked")
+            raise
         render_seconds = time.perf_counter() - render_start
+        for key in ("ax_tree_path", "dom_path", "screenshot_full"):
+            obs.artifact(key, render_result.get(key))
 
         # Extract artifactId and nested content_hash under page_state
         artifact_id = render_result.get("artifactId")
@@ -420,11 +461,13 @@ async def scan_url(
                 "to a page state."
             )
         content_hash = page_state["content_hash"]
+        obs.artifact("content_hash", content_hash)
 
         # Step 2: Request Accessibility Analysis using 'runAxe' and artifactId
         logger.info(f"Requesting runAxe analysis for artifact: {artifact_id}")
         analysis_start = time.perf_counter()
-        analysis_result = await rpc_call("runAxe", {"artifactId": artifact_id})
+        with obs.timed("axe"):
+            analysis_result = await rpc_call("runAxe", {"artifactId": artifact_id})
         analysis_seconds = time.perf_counter() - analysis_start
 
         # Extract both buckets
@@ -446,6 +489,9 @@ async def scan_url(
                 map_raw_violation_to_finding(raw_v, page_state_hash=content_hash)
             )
 
+        obs.note("axe", violations=len(raw_violations), incomplete=len(raw_incomplete))
+        obs.note("contrast", regions=0)
+
         # Process incomplete contrast findings
         for raw_inc in raw_incomplete:
             if not isinstance(raw_inc, dict):
@@ -460,13 +506,15 @@ async def scan_url(
                 non_wcag.append(raw_inc.get("id", "unknown-rule"))
                 continue
             mapped_finding = map_raw_violation_to_finding(raw_inc, page_state_hash=content_hash)
-            findings.append(
-                await _adjudicate_incomplete_contrast(
-                    rpc_call, artifact_id, mapped_finding
+            with obs.timed("contrast"):
+                findings.append(
+                    await _adjudicate_incomplete_contrast(
+                        rpc_call, artifact_id, mapped_finding
+                    )
                 )
-            )
 
         if non_wcag:
+            obs.note("axe", non_wcag_excluded=len(non_wcag))
             logger.info(
                 "Excluded %d non-WCAG (best-practice) finding(s) from the "
                 "conformance report: %s",
@@ -481,15 +529,17 @@ async def scan_url(
         # went into, so dedup, waivers, severity and the conformance map all
         # treat keyboard findings identically to every other kind — which is
         # the point of having one Finding model.
-        findings.extend(
-            await _run_keyboard_traversal(rpc_call, artifact_id, content_hash)
-        )
+        with obs.timed("keyboard"):
+            findings.extend(
+                await _run_keyboard_traversal(rpc_call, artifact_id, content_hash)
+            )
 
         # Step 3.8: Week 9 — APG widget contracts. Last, because it presses
         # keys on the page (opens menus, toggles disclosures).
-        findings.extend(
-            await _run_apg_contracts(rpc_call, artifact_id, content_hash)
-        )
+        with obs.timed("contracts"):
+            findings.extend(
+                await _run_apg_contracts(rpc_call, artifact_id, content_hash)
+            )
 
         # Step 3.9: Deduplicate and apply waivers. After every agent has
         # contributed (axe, contrast, keyboard, APG), so one dedup pass sees
@@ -511,6 +561,10 @@ async def scan_url(
             render_seconds,
             analysis_seconds,
         )
+
+        t = obs.current()
+        if t is not None:
+            t.finish()
 
         # Step 5: Return Final Audit Report
         return AuditReport(

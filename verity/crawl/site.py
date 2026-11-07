@@ -47,6 +47,10 @@ class SiteReport:
     skipped: dict[str, str] = field(default_factory=dict)
     budget_stopped: bool = False
     cache_hits: int = 0
+    # B13.4: pages that failed to render or analyse. One broken page never
+    # aborts the audit; it is listed here, with why, and nothing on it is
+    # reported as checked.
+    render_failed: dict[str, str] = field(default_factory=dict)
 
     @property
     def pages_scanned(self) -> int:
@@ -69,12 +73,17 @@ def crawl_site(
     bounds: Optional[CrawlBounds] = None,
     budget: Optional[CrawlBudget] = None,
     cache: Optional[FindingsCache] = None,
-    ruleset_version: str = "1.0.0",
+    ruleset_version: Optional[str] = None,
     viewport: str = "default",
 ) -> SiteReport:
     """Crawl `seeds` within `bounds` and `budget`, caching findings by content."""
     if not seeds:
         return SiteReport(seeds=[])
+    if ruleset_version is None:
+        # Everything that can change a finding on identical content (cache.py).
+        from verity.crawl.cache import ruleset_fingerprint
+
+        ruleset_version = ruleset_fingerprint()
     bounds = bounds or CrawlBounds()
     budget = budget or CrawlBudget(max_pages=bounds.max_pages)
 
@@ -93,14 +102,24 @@ def crawl_site(
             break
 
         url, depth = frontier.pop()
-        render = render_fn(url)
+        try:
+            render = render_fn(url)
+        except Exception as exc:  # B13.4: render_failed, not a dead audit
+            budget.record()
+            report.render_failed[url] = f"render failed: {exc.__class__.__name__}: {exc}"[:300]
+            continue
         key = CacheKey(render.content_hash, ruleset_version, viewport)
 
         cached = cache.get(key) if cache else None
         if cached is not None:
             findings, from_cache = cached, True
         else:
-            findings, from_cache = analyze_fn(url), False
+            try:
+                findings, from_cache = analyze_fn(url), False
+            except Exception as exc:
+                budget.record()
+                report.render_failed[url] = f"analysis failed: {exc.__class__.__name__}: {exc}"[:300]
+                continue
             if cache:
                 cache.put(key, findings)
 

@@ -1,0 +1,12 @@
+# Agent tasks for the sampled sites (B17.2′). `"*"` applies to every sampled site.
+# A task may carry a deterministic `success:` spec (eval/agentbench/evaluators.py);
+# without one, success is the agent's own verdict and is reported as self-reported.
+"*":
+  - task: "Find the site's search box and search for the word accessibility"
+    success:
+      url: {matches: "(?i)(search|q=|query=).*accessibility"}
+  - task: "Open the main navigation menu, if the site has one, and go to the first section it lists"
+https://www.gov.uk/:
+  - task: "Find the page that explains how to apply for a passport"
+    success:
+      url: {matches: "(?i)passport"}
