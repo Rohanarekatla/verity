@@ -1,5 +1,8 @@
 # Verity
 
+[![CI](https://github.com/Rohanarekatla/verity/actions/workflows/ci.yml/badge.svg)](https://github.com/Rohanarekatla/verity/actions/workflows/ci.yml)
+[![License: MPL-2.0](https://img.shields.io/badge/License-MPL--2.0-brightgreen.svg)](LICENSE)
+
 Verity is a WCAG accessibility conformance engine. It screens a page
 with `axe-core`, adjudicates ambiguous results deterministically (e.g.
 contrast over images), and — where a model is used at all — treats the
@@ -56,6 +59,22 @@ uv run python -m verity.cli acr scan.json --product "Example" --out acr.md --htm
 # Verity's checks as MCP tools for a coding agent; WebMCP readiness for forms
 uv run python -m verity.cli mcp
 uv run python -m verity.cli webmcp https://example.com --generate
+```
+
+A scan separates failures that gate the build from items only a human can
+decide — a clean page never reads as broken:
+
+```
+ VERITY ACCESSIBILITY AUDIT REPORT
+ Target URL     : https://example.com
+ WCAG Standard  : WCAG2.2-AA
+ Failures       : 1
+ Needs review   : 0
+------------------------------------------------------------
+ FAILURES (gate the build):
+  1. [SERIOUS] SC 1.4.3 - Contrast between foreground and background is
+     below the WCAG 2 AA minimum ratio
+     Selector: #low-contrast-text
 ```
 
 In GitHub Actions use [`action/`](action/) — findings appear as inline PR
