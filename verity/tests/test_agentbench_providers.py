@@ -254,3 +254,19 @@ def test_local_models_run_under_a_cap_because_they_are_free():
     ledger = CostLedger(cap_usd=0.0)
     out = make_provider("ollama:qwen3:8b", transport=FakeTransport(OLLAMA_OK), ledger=ledger).complete(USER)
     assert out.cost_usd == 0.0 and ledger.total_usd == 0.0
+
+
+def test_openai_base_url_prefers_arg_then_env_then_openai(monkeypatch):
+    """Any OpenAI-compatible endpoint (e.g. OpenRouter) via OPENAI_BASE_URL."""
+    from eval.agentbench.providers.openai import API_BASE, OpenAIProvider
+
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    assert OpenAIProvider("gpt-4o-mini", api_key="k", allow_unpriced=True).base_url == API_BASE
+
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
+    assert OpenAIProvider("meta-llama/llama-3.1-8b-instruct", api_key="k",
+                          allow_unpriced=True).base_url == "https://openrouter.ai/api/v1"
+
+    # explicit arg wins over env, trailing slash stripped
+    assert OpenAIProvider("m", api_key="k", allow_unpriced=True,
+                          base_url="http://local:8000/v1/").base_url == "http://local:8000/v1"

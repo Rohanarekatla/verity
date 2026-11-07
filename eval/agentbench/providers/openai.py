@@ -29,12 +29,14 @@ API_BASE = "https://api.openai.com/v1"
 class OpenAIProvider(BaseProvider):
     name = "openai"
 
-    def __init__(self, model: str, *, api_key: Optional[str] = None, base_url: str = API_BASE, **kw):
+    def __init__(self, model: str, *, api_key: Optional[str] = None, base_url: Optional[str] = None, **kw):
         super().__init__(model, **kw)
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY")
         if not self._api_key:
             raise ProviderError(self.name, "no API key: set OPENAI_API_KEY")
-        self.base_url = base_url.rstrip("/")
+        # Any OpenAI-compatible endpoint (OpenRouter, vLLM, LM Studio) via
+        # OPENAI_BASE_URL; explicit base_url wins, then env, then OpenAI.
+        self.base_url = (base_url or os.environ.get("OPENAI_BASE_URL") or API_BASE).rstrip("/")
 
     def _request(self, messages: list[Message], *, system, max_tokens, cache, seed, cache_key):
         msgs = ([{"role": "system", "content": system}] if system else []) + \
